@@ -1,13 +1,6 @@
 import numpy as np
 from stl import mesh
-from helpers.intersects import ray_intersects_triangle
-
-class Ray:
-    def __init__(self, origin, direction):
-        self.origin = np.array(origin)
-        self.direction = np.array(direction)
-        self.direction /= np.linalg.norm(self.direction)
-
+from helpers.ray_tracing import Ray, ray_intersects_triangle
 
 
 stl = mesh.Mesh.from_file('../utils/sphere.stl')

@@ -1,5 +1,11 @@
 import numpy as np
 
+class Ray:
+    def __init__(self, origin, direction):
+        self.origin = np.array(origin)
+        self.direction = np.array(direction)
+        self.direction /= np.linalg.norm(self.direction)
+
 def ray_intersects_triangle(ray, triangle):
     """ Moller-Trumbore algorithm to detect ray intersection
         with a single triangle and return the intersection point.
