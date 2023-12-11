@@ -25,7 +25,7 @@ def ray_intersects_tri(ray, triangle):
 
     # If determinant is near zero, ray lies in plane of triangle
     if abs(det) < 1e-8:
-        return False, None
+        return False, None, None, None
 
     inv_det = 1.0 / det
 
@@ -37,7 +37,7 @@ def ray_intersects_tri(ray, triangle):
     # Calculate u parameter and test bounds
     u = (tvec_x * pvec_x + tvec_y * pvec_y + tvec_z * pvec_z) * inv_det
     if u < 0 or u > 1:
-        return False, None
+        return False, None, None, None
 
     # Prepare to test v parameter
     qvec_x = tvec_y * edge1_z - tvec_z * edge1_y
@@ -45,9 +45,11 @@ def ray_intersects_tri(ray, triangle):
     qvec_z = tvec_x * edge1_y - tvec_y * edge1_x
 
     # Calculate v parameter and test bounds
-    v = (ray['direction'][0] * qvec_x + ray['direction'][1] * qvec_y + ray['direction'][2] * qvec_z) * inv_det
+    v = (ray['direction'][0] * qvec_x \
+       + ray['direction'][1] * qvec_y \
+       + ray['direction'][2] * qvec_z) * inv_det
     if v < 0 or u + v > 1:
-        return False, None
+        return False, None, None, None
 
     # Calculate t, the distance from v1 to the intersection point
     t = (edge2_x * qvec_x + edge2_y * qvec_y + edge2_z * qvec_z) * inv_det
@@ -57,16 +59,17 @@ def ray_intersects_tri(ray, triangle):
     intersection_point_y = ray['origin'][1] + t * ray['direction'][1]
     intersection_point_z = ray['origin'][2] + t * ray['direction'][2]
 
-    return True, (intersection_point_x, intersection_point_y, intersection_point_z)
+    return True, intersection_point_x, intersection_point_y, intersection_point_z
 
 
 @cuda.jit(device=True)
-def get_grid_index(point, x_min, x_max, y_min, y_max, z_min, z_max, resolution):
-    # Calculate the index in the grid for each dimension
-    x_index = int((point[0] - x_min) / (x_max - x_min) * resolution)
-    y_index = int((point[1] - y_min) / (y_max - y_min) * resolution)
-    z_index = int((point[2] - z_min) / (z_max - z_min) * resolution)
+def get_grid_index(point_x, point_y, point_z, x_min, x_max, y_min, y_max, z_min, z_max, resolution):
+    # calculate the index in the grid for each dimension
+    x_index = int((point_x - x_min) / (x_max - x_min) * resolution)
+    y_index = int((point_y - y_min) / (y_max - y_min) * resolution)
+    z_index = int((point_z - z_min) / (z_max - z_min) * resolution)
     return x_index, y_index, z_index
+
 
 @cuda.jit
 def trace_rays(rays, triangles, intersection_grid, x_min, x_max, y_min, y_max, z_min, z_max, resolution):
@@ -74,10 +77,9 @@ def trace_rays(rays, triangles, intersection_grid, x_min, x_max, y_min, y_max, z
     if ray_idx < rays.shape[0]:
         ray = rays[ray_idx]
         for j in range(triangles.shape[0]):
-            intersects, point = ray_intersects_tri(ray, triangles[j])
+            intersects, point_x, point_y, point_z = ray_intersects_tri(ray, triangles[j])
             if intersects:
-                # get the grid index for the intersection point
-                x_idx, y_idx, z_idx = get_grid_index(point, x_min, x_max, y_min, y_max, z_min, z_max, resolution)
-                # mark the intersection in the grid
+                x_idx, y_idx, z_idx = get_grid_index( \
+                point_x, point_y, point_z, x_min, x_max, y_min, y_max, z_min, z_max, resolution)
                 intersection_grid[x_idx, y_idx, z_idx] = True
 

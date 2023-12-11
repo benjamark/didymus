@@ -17,7 +17,7 @@ Ray = np.dtype([('origin',    np.float32, (3,)),
 x_min, x_max = -1.2, 1.2
 y_min, y_max = -1.2, 1.2
 z_min, z_max = -1.2, 1.2
-resolution = 100
+resolution = 128
 
 x = np.linspace(x_min, x_max, resolution)
 y = np.linspace(y_min, y_max, resolution)
@@ -48,7 +48,6 @@ for y in range(resolution):
 # convert the list to a structured numpy array
 rays = np.array(ray_data, dtype=Ray)
 
-
 # Prepare an output array
 output = np.zeros(len(rays), dtype=np.int32)
 output_ = cuda.to_device(output)
@@ -56,10 +55,13 @@ output_ = cuda.to_device(output)
 # send rays and tris to dev
 rays_ = cuda.to_device(rays)
 tris_ = cuda.to_device(tris)
-threads_per_block = 32
-blocks_per_grid = (rays_.size + (threads_per_block - 1)) // threads_per_block
 
-trace_rays[blocks_per_grid, threads_per_block](rays_, tris_, intersection_grid_, x_min, x_max, y_min, y_max, z_min, z_max, resolution)
+threads_per_block = 128  
+blocks_per_grid = (rays.size + threads_per_block - 1) // threads_per_block
+blocks_per_grid = max(blocks_per_grid, 320)  # At least 2x the number of SMs
+
+trace_rays[blocks_per_grid, threads_per_block](rays_, tris_, \
+    intersection_grid_, x_min, x_max, y_min, y_max, z_min, z_max, resolution)
 
 intersection_grid_ = intersection_grid_.copy_to_host(intersection_grid)
 print("Total intersections:", np.sum(intersection_grid))
