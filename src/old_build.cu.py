@@ -2,6 +2,7 @@ import numpy as np
 from stl import mesh
 from numba import cuda
 from kernels import ray_intersects_tri, get_grid_index, trace_rays
+import matplotlib.pyplot as plt
 
 # load test STL
 sphere_mesh = mesh.Mesh.from_file('../utils/sphere.stl')
@@ -12,16 +13,24 @@ tris = np.array(sphere_mesh.vectors, dtype=np.float32)
 Ray = np.dtype([('origin',    np.float32, (3,)), 
                 ('direction', np.float32, (3,))])
 
-
 # create background structured mesh
 x_min, x_max = -1.2, 1.2
 y_min, y_max = -1.2, 1.2
 z_min, z_max = -1.2, 1.2
-resolution = 1024
+resolution = 512
+
+x = np.linspace(x_min, x_max, resolution)
+y = np.linspace(y_min, y_max, resolution)
+z = np.linspace(z_min, z_max, resolution)
+X, Y, Z = np.meshgrid(x, y, z, indexing='ij')
 
 # mesh to record intersections
 intersection_grid = np.zeros((resolution, resolution, resolution), dtype=np.bool_)
-# transfer to GPU
+
+# Transfer to GPU
+X_ = cuda.to_device(X)
+Y_ = cuda.to_device(Y)
+Z_ = cuda.to_device(Z)
 intersection_grid_ = cuda.to_device(intersection_grid)
 
 # initialize a list to store ray data
@@ -47,12 +56,14 @@ output_ = cuda.to_device(output)
 rays_ = cuda.to_device(rays)
 tris_ = cuda.to_device(tris)
 
-threads_per_block = 128  
+threads_per_block = 128
 blocks_per_grid = (rays.size + threads_per_block - 1) // threads_per_block
-blocks_per_grid = max(blocks_per_grid, 320)  # At least 2x the number of SMs
-
+blocks_per_grid = max(blocks_per_grid, 320)  # V100 has 160 SMs, use 2x
+# call ray tracing kernel
 trace_rays[blocks_per_grid, threads_per_block](rays_, tris_, \
     intersection_grid_, x_min, x_max, y_min, y_max, z_min, z_max, resolution)
+
+cuda.synchronize()
 
 intersection_grid_ = intersection_grid_.copy_to_host(intersection_grid)
 print("Total intersections:", np.sum(intersection_grid))
