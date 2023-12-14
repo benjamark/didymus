@@ -3,56 +3,69 @@ from stl import mesh
 from numba import cuda
 from kernels import ray_intersects_tri, get_grid_index, trace_rays
 
+THREADS_PER_BLOCK = 128  
+
 # load test STL
 sphere_mesh = mesh.Mesh.from_file('../utils/sphere.stl')
 # ensure triangles are numpy arrays for GPU usage
 tris = np.array(sphere_mesh.vectors, dtype=np.float32)
+# keep tris on GPU while ray-tracing in all 3 directions
+tris_ = cuda.to_device(tris)
 
 # define ray data type; use structured numpy array for GPU usage
 Ray = np.dtype([('origin',    np.float32, (3,)), 
                 ('direction', np.float32, (3,))])
 
-
 # create background structured mesh
 x_min, x_max = -1.2, 1.2
 y_min, y_max = -1.2, 1.2
 z_min, z_max = -1.2, 1.2
-resolution = 1024
+resolution = 512
 
-# mesh to record intersections
-intersection_grid = np.zeros((resolution, resolution, resolution), dtype=np.bool_)
-# transfer to GPU
-intersection_grid_ = cuda.to_device(intersection_grid)
+def initialize_rays(axis, resolution, x_min, x_max, y_min, y_max, z_min, z_max):
+    """Generate a regular grid of rays along the specified axis, originating
+       at the minimum value of the axis. The rays are centered in the face
+       normal to the axis.
+    """
+    ray_data = []
+    for i in range(resolution):
+        for j in range(resolution):
+            if axis == 'x':
+                ray_origin = [x_min, y_min + (i + 0.5) / resolution * (y_max - y_min), z_min + (j + 0.5) / resolution * (z_max - z_min)]
+                ray_direction = [1.0, 0.0, 0.0]
+            elif axis == 'y':
+                ray_origin = [x_min + (i + 0.5) / resolution * (x_max - x_min), y_min, z_min + (j + 0.5) / resolution * (z_max - z_min)]
+                ray_direction = [0.0, 1.0, 0.0]
+            else:  # axis == 'z'
+                ray_origin = [x_min + (i + 0.5) / resolution * (x_max - x_min), y_min + (j + 0.5) / resolution * (y_max - y_min), z_min]
+                ray_direction = [0.0, 0.0, 1.0]
+            ray_data.append((ray_origin, ray_direction))
+    return np.array(ray_data, dtype=Ray)
 
-# initialize a list to store ray data
-ray_data = []
-# initialize x-rays
-for y in range(resolution):
-    for z in range(resolution):
-        # rays originate at y/z face centers
-        ray_origin = [x_min,
-                      y_min + (y + 0.5) * (y_max - y_min) / resolution,
-                      z_min + (z + 0.5) * (z_max - z_min) / resolution]
-        ray_direction = [1.0, 0.0, 0.0]  # along the x-axis
-        ray_data.append((ray_origin, ray_direction))
+def dump_rays_to_file(rays, filename):
+    with open(filename, 'w') as file:
+        for ray in rays:
+            ray_origin = ray['origin']
+            ray_direction = ray['direction']
+            file.write(f"Origin: {ray_origin}, Direction: {ray_direction}\n")
 
-# convert the list to a structured numpy array
-rays = np.array(ray_data, dtype=Ray)
 
-# Prepare an output array
-output = np.zeros(len(rays), dtype=np.int32)
-output_ = cuda.to_device(output)
+def trace(axis):
+    intersects = np.zeros((resolution, resolution, resolution), dtype=np.bool_)
+    rays = initialize_rays(axis, resolution, x_min, x_max, y_min, y_max, z_min, z_max)
+    rays_ = cuda.to_device(rays)
+    intersects_ = cuda.to_device(intersects)
 
-# send rays and tris to dev
-rays_ = cuda.to_device(rays)
-tris_ = cuda.to_device(tris)
+    blocks_per_grid = max((rays.size + THREADS_PER_BLOCK - 1) // THREADS_PER_BLOCK, 320)
+    trace_rays[blocks_per_grid, THREADS_PER_BLOCK](rays_, tris_, intersects_, x_min, x_max, y_min, y_max, z_min, z_max, resolution)
+    cuda.synchronize()
+    
+    intersects = intersects_.copy_to_host()
+    del rays_, intersects_
+    print(f"Total intersections along {axis}-axis:", np.sum(intersects))
+    return intersects
 
-threads_per_block = 128  
-blocks_per_grid = (rays.size + threads_per_block - 1) // threads_per_block
-blocks_per_grid = max(blocks_per_grid, 320)  # At least 2x the number of SMs
-
-trace_rays[blocks_per_grid, threads_per_block](rays_, tris_, \
-    intersection_grid_, x_min, x_max, y_min, y_max, z_min, z_max, resolution)
-
-intersection_grid_ = intersection_grid_.copy_to_host(intersection_grid)
-print("Total intersections:", np.sum(intersection_grid))
+# Perform ray tracing along each axis
+x_intersects = trace('x')
+y_intersects = trace('y')
+z_intersects = trace('z')
