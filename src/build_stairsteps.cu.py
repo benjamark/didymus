@@ -7,7 +7,7 @@ from kernels import ray_intersects_tri, get_grid_index, trace_rays
 THREADS_PER_BLOCK = 128  
 
 # load test STL
-stl_mesh = mesh.Mesh.from_file('../utils/shapenet/2.stl')
+stl_mesh = mesh.Mesh.from_file('../utils/sphere.stl')
 # ensure triangles are numpy arrays for GPU usage
 tris = np.array(stl_mesh.vectors, dtype=np.float32)
 # keep tris on GPU while ray-tracing in all 3 directions
@@ -21,7 +21,7 @@ Ray = np.dtype([('origin',    np.float32, (3,)),
 x_min, x_max, y_min, y_max, z_min, z_max = compute_bbox(stl_mesh)
 print("bounding box with buffer:", x_min, x_max, y_min, y_max, z_min, z_max)
 
-resolution = 128
+resolution = 256
 
 # coordinates of nodes
 x = np.linspace(x_min, x_max, resolution)
@@ -36,6 +36,48 @@ xc = (x[:-1] + x[1:]) / 2
 yc = (y[:-1] + y[1:]) / 2
 zc = (z[:-1] + z[1:]) / 2
 
+
+def move_vertices_to_closest_node(stl_mesh, X, Y, Z):
+    """
+    Iterates over the vertices in the STL mesh and moves each vertex to the 
+    closest node in the background mesh.
+
+    """
+    for i in range(len(stl_mesh.vectors)):
+        for j in range(3):  # Each triangle has 3 vertices
+            vertex = stl_mesh.vectors[i][j]
+            # Calculate the differences for each dimension
+            dx = np.abs(X - vertex[0])
+            dy = np.abs(Y - vertex[1])
+            dz = np.abs(Z - vertex[2])
+
+            # Find the indices of the closest node
+            closest_idx = np.unravel_index(np.argmin(dx**2 + dy**2 + dz**2), dx.shape)
+
+            # Update the vertex to the closest node
+            stl_mesh.vectors[i][j] = np.array([X[closest_idx], Y[closest_idx], Z[closest_idx]])
+
+    return stl_mesh
+
+
+stl_mesh.save('old.stl')
+
+# shifted grid 
+#dx = 0.0*(x[1]-x[0])
+#dy = 0.0*(y[1]-y[0])
+#dz = 0.0*(z[1]-z[0])
+
+#xs = np.linspace(x_min+dx, x_max+dx, 23)
+#ys = np.linspace(y_min+dy, y_max+dy, 23)
+#zs = np.linspace(z_min+dz, z_max+dz, 23)
+
+# grid of nodes 
+#Xs, Ys, Zs = np.meshgrid(xs, ys, zs, indexing='ij')
+#print(xs)
+
+#stl_mesh = move_vertices_to_closest_node(stl_mesh, Xs, Ys, Zs)
+#stl_mesh.save('new.stl')
+
 def get_grid_index_host(point_x, point_y, point_z):
     """ 
     Given a point in the domain, return the index of the 
@@ -48,15 +90,8 @@ def get_grid_index_host(point_x, point_y, point_z):
     x_index = min(x_index, resolution - 2)
     y_index = min(y_index, resolution - 2)
     z_index = min(z_index, resolution - 2)
+
     return x_index, y_index, z_index
-
-
-print(x)
-#[-0.55000001 -0.39285715 -0.23571429 -0.07857143  0.07857143  0.23571429
-#  0.39285715  0.55000001]
-#print(get_grid_index_host(-0.23570000, -0.55, -0.55))
-#print(get_grid_index_host(-0.23573000, -0.55, -0.55))
-
 
 
 def get_face_nodes(cell_index, flag, dimension):
@@ -150,31 +185,81 @@ def create_tris_from_nodes(nodes, flag, dimension):
     return triangle1, triangle2
 
 
-def initialize_rays(axis, resolution, x_min, x_max, y_min, y_max, z_min, z_max):
+#def initialize_rays(axis, resolution, x_min, x_max, y_min, y_max, z_min, z_max):
+#    """Generate a regular grid of rays along the specified axis, originating
+#       at the minimum value of the axis. The rays are centered in the face
+#       normal to the axis.
+#    """
+#    ray_data = []
+#    for i in range(resolution):
+#        for j in range(resolution):
+#            if axis == 'x':
+#                ray_origin = [x_min, \
+#                y_min + (i + 0.5) / resolution *(y_max - y_min), \
+#                z_min + (j + 0.5) / resolution *(z_max - z_min)]
+#                ray_direction = [1.0, 0.0, 0.0]
+#            elif axis == 'y':
+#                ray_origin = [x_min + (i + 0.5) / resolution *(x_max - x_min), \
+#                y_min, \
+#                z_min + (j + 0.5) / resolution *(z_max - z_min)]
+#                ray_direction = [0.0, 1.0, 0.0]
+#            else:  # axis == 'z'
+#                ray_origin = [x_min + (i + 0.5) / resolution *(x_max - x_min), \
+#                y_min + (j + 0.5) / resolution *(y_max - y_min), \
+#                z_min]
+#                ray_direction = [0.0, 0.0, 1.0]
+#            ray_data.append((ray_origin, ray_direction))
+#    return np.array(ray_data, dtype=Ray)
+
+
+
+def initialize_rays(axis, resolution, x_min, x_max, y_min, y_max, z_min, z_max, sample=False):
     """Generate a regular grid of rays along the specified axis, originating
        at the minimum value of the axis. The rays are centered in the face
-       normal to the axis.
+       normal to the axis. If sample is True, generate staggered rays.
     """
     ray_data = []
+    offset_factor = 5e-3  # Adjust this factor to control the offset
+
     for i in range(resolution):
         for j in range(resolution):
+            # Base ray origin calculation
             if axis == 'x':
-                ray_origin = [x_min, \
-                y_min + (i + 0.5) / resolution *(y_max - y_min), \
-                z_min + (j + 0.5) / resolution *(z_max - z_min)]
-                ray_direction = [1.0, 0.0, 0.0]
+                base_origin = [x_min, y_min + (i + 0.5) / resolution * (y_max - y_min), 
+                               z_min + (j + 0.5) / resolution * (z_max - z_min)]
+                directions = [(1.0, 0.0, 0.0)]
             elif axis == 'y':
-                ray_origin = [x_min + (i + 0.5) / resolution *(x_max - x_min), \
-                y_min, \
-                z_min + (j + 0.5) / resolution *(z_max - z_min)]
-                ray_direction = [0.0, 1.0, 0.0]
+                base_origin = [x_min + (i + 0.5) / resolution * (x_max - x_min), y_min, 
+                               z_min + (j + 0.5) / resolution * (z_max - z_min)]
+                directions = [(0.0, 1.0, 0.0)]
             else:  # axis == 'z'
-                ray_origin = [x_min + (i + 0.5) / resolution *(x_max - x_min), \
-                y_min + (j + 0.5) / resolution *(y_max - y_min), \
-                z_min]
-                ray_direction = [0.0, 0.0, 1.0]
-            ray_data.append((ray_origin, ray_direction))
-    return np.array(ray_data, dtype=Ray)
+                base_origin = [x_min + (i + 0.5) / resolution * (x_max - x_min), 
+                               y_min + (j + 0.5) / resolution * (y_max - y_min), z_min]
+                directions = [(0.0, 0.0, 1.0)]
+
+            # Add staggered rays if sampling is enabled
+            if sample:
+                if axis == 'x':
+                    offsets = [(0, offset_factor, 0), (0, -offset_factor, 0), 
+                               (0, 0, offset_factor), (0, 0, -offset_factor)]
+                elif axis == 'y':
+                    offsets = [(offset_factor, 0, 0), (-offset_factor, 0, 0), 
+                               (0, 0, offset_factor), (0, 0, -offset_factor)]
+                else:  # axis == 'z'
+                    offsets = [(offset_factor, 0, 0), (-offset_factor, 0, 0), 
+                               (0, offset_factor, 0), (0, -offset_factor, 0)]
+
+                for offset in offsets:
+                    staggered_origin = [base_origin[0] + offset[0], 
+                                        base_origin[1] + offset[1], 
+                                        base_origin[2] + offset[2]]
+                    ray_data.append((staggered_origin, directions[0]))
+
+            # Add the base ray
+            ray_data.append((base_origin, directions[0]))
+
+    return np.array(ray_data, dtype=[('origin', 'f4', (3,)), ('direction', 'f4', (3,))])
+
 
 
 def dump_rays_to_file(rays, filename):
