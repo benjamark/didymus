@@ -2,7 +2,7 @@ import numpy as np
 from stl import mesh
 from numba import cuda
 from helpers import compute_bbox
-from kernels import ray_intersects_tri, get_grid_index, trace_rays
+from kernels import ray_intersects_tri, get_face_ids, trace_rays
 
 THREADS_PER_BLOCK = 128  
 
@@ -21,7 +21,7 @@ Ray = np.dtype([('origin',    np.float32, (3,)),
 x_min, x_max, y_min, y_max, z_min, z_max = compute_bbox(stl_mesh)
 print("bounding box with buffer:", x_min, x_max, y_min, y_max, z_min, z_max)
 
-resolution = 256
+resolution = 3
 
 # coordinates of nodes
 x = np.linspace(x_min, x_max, resolution)
@@ -31,10 +31,9 @@ z = np.linspace(z_min, z_max, resolution)
 # grid of nodes 
 X, Y, Z = np.meshgrid(x, y, z, indexing='ij')
 
-# coordinates of centers
-xc = (x[:-1] + x[1:]) / 2
-yc = (y[:-1] + y[1:]) / 2
-zc = (z[:-1] + z[1:]) / 2
+
+def test_face_ids(xp, yp, zp):
+    pass
 
 
 def move_vertices_to_closest_node(stl_mesh, X, Y, Z):
@@ -94,67 +93,44 @@ def get_grid_index_host(point_x, point_y, point_z):
     return x_index, y_index, z_index
 
 
-def get_face_nodes(cell_index, flag, dimension):
+def get_face_nodes(face_index, dimension):
     """
-    Retrieve coordinates of the four nodes forming a specific face of a cell.
-
-    Given a cell index in the grid, return the coordinates of the four nodes
-    that make up a selected face of the cell. The face is determined by the 
-    'dimension' (x, y, or z) and the 'flag' ('plus' or 'minus'). 
-    'plus' indicates the face on the higher value side of the specified 
-    dimension, while 'minus' indicates the lower value side.
-
+    Retrieve coordinates of the four nodes forming a specific face.
+    
+    Given a face index on a grid, return the coordinates of the four nodes
+    that make up the face. The face is determined by the 'dimension' (x, y, or z).
+    The index refers to the face index in the specified dimension.
     """
-    x_index, y_index, z_index = cell_index
-
-    if flag == 'plus':
-        if dimension == 'x':
-            x_index += 1
-        elif dimension == 'y':
-            y_index += 1
-        elif dimension == 'z':
-            z_index += 1
-    elif flag == 'minus':
-        pass
-    else:
-        raise ValueError("flag must be 'plus' or 'minus'")
-
+    x_index, y_index, z_index = face_index
+    
     if dimension == 'x':
+        # In this case, y and z indices can go from 0 to resolution-1
+        # But x_index should be fixed for the face, and go from 0 to resolution-2
         nodes = [
-            (X[x_index, y_index, z_index], Y[x_index, y_index, z_index], 
-             Z[x_index, y_index, z_index]),
-            (X[x_index, y_index+1, z_index], Y[x_index, y_index+1, z_index], 
-             Z[x_index, y_index+1, z_index]),
-            (X[x_index, y_index+1, z_index+1], Y[x_index, y_index+1, z_index+1], 
-             Z[x_index, y_index+1, z_index+1]),
-            (X[x_index, y_index, z_index+1], Y[x_index, y_index, z_index+1], 
-             Z[x_index, y_index, z_index+1])
+            (X[x_index], Y[y_index], Z[z_index]),
+            (X[x_index], Y[y_index+1], Z[z_index]),
+            (X[x_index], Y[y_index+1], Z[z_index+1]),
+            (X[x_index], Y[y_index], Z[z_index+1])
         ]
     elif dimension == 'y':
+        # In this case, x and z indices can go from 0 to resolution-1
+        # But y_index should be fixed for the face, and go from 0 to resolution-2
         nodes = [
-            (X[x_index, y_index, z_index], Y[x_index, y_index, z_index], 
-             Z[x_index, y_index, z_index]),
-            (X[x_index+1, y_index, z_index], Y[x_index+1, y_index, z_index], 
-             Z[x_index+1, y_index, z_index]),
-            (X[x_index+1, y_index, z_index+1], Y[x_index+1, y_index, z_index+1], 
-             Z[x_index+1, y_index, z_index+1]),
-            (X[x_index, y_index, z_index+1], Y[x_index, y_index, z_index+1], 
-             Z[x_index, y_index, z_index+1])
+            (X[x_index], Y[y_index], Z[z_index]),
+            (X[x_index+1], Y[y_index], Z[z_index]),
+            (X[x_index+1], Y[y_index], Z[z_index+1]),
+            (X[x_index], Y[y_index], Z[z_index+1])
         ]
     elif dimension == 'z':
+        # In this case, x and y indices can go from 0 to resolution-1
+        # But z_index should be fixed for the face, and go from 0 to resolution-2
         nodes = [
-            (X[x_index, y_index, z_index], Y[x_index, y_index, z_index], 
-             Z[x_index, y_index, z_index]),
-            (X[x_index+1, y_index, z_index], Y[x_index+1, y_index, z_index], 
-             Z[x_index+1, y_index, z_index]),
-            (X[x_index+1, y_index+1, z_index], Y[x_index+1, y_index+1, z_index], 
-             Z[x_index+1, y_index+1, z_index]),
-            (X[x_index, y_index+1, z_index], Y[x_index, y_index+1, z_index], 
-             Z[x_index, y_index+1, z_index])
+            (X[x_index], Y[y_index], Z[z_index]),
+            (X[x_index+1], Y[y_index], Z[z_index]),
+            (X[x_index+1], Y[y_index+1], Z[z_index]),
+            (X[x_index], Y[y_index+1], Z[z_index])
         ]
-
-    if flag == 'minus':
-        nodes = nodes[::-1]
+    print(nodes)
 
     return nodes
 
@@ -185,67 +161,37 @@ def create_tris_from_nodes(nodes, flag, dimension):
     return triangle1, triangle2
 
 
-#def initialize_rays(axis, resolution, x_min, x_max, y_min, y_max, z_min, z_max):
-#    """Generate a regular grid of rays along the specified axis, originating
-#       at the minimum value of the axis. The rays are centered in the face
-#       normal to the axis.
-#    """
-#    ray_data = []
-#    for i in range(resolution):
-#        for j in range(resolution):
-#            if axis == 'x':
-#                ray_origin = [x_min, \
-#                y_min + (i + 0.5) / resolution *(y_max - y_min), \
-#                z_min + (j + 0.5) / resolution *(z_max - z_min)]
-#                ray_direction = [1.0, 0.0, 0.0]
-#            elif axis == 'y':
-#                ray_origin = [x_min + (i + 0.5) / resolution *(x_max - x_min), \
-#                y_min, \
-#                z_min + (j + 0.5) / resolution *(z_max - z_min)]
-#                ray_direction = [0.0, 1.0, 0.0]
-#            else:  # axis == 'z'
-#                ray_origin = [x_min + (i + 0.5) / resolution *(x_max - x_min), \
-#                y_min + (j + 0.5) / resolution *(y_max - y_min), \
-#                z_min]
-#                ray_direction = [0.0, 0.0, 1.0]
-#            ray_data.append((ray_origin, ray_direction))
-#    return np.array(ray_data, dtype=Ray)
-
-
-
 def initialize_rays(axis, resolution, x_min, x_max, y_min, y_max, z_min, z_max, sample=False):
     """Generate a regular grid of rays along the specified axis, originating
        at the minimum value of the axis. The rays are centered in the face
        normal to the axis. If sample is True, generate staggered rays.
+       NOTE: Looping only works for a cubic grid.
     """
     ray_data = []
-    offset_factor = 5e-3  # Adjust this factor to control the offset
+    offset_factor = 0.01*(x[1]-x[0])  # Adjust this factor to control the offset
 
-    for i in range(resolution):
-        for j in range(resolution):
-            # Base ray origin calculation
-            if axis == 'x':
-                base_origin = [x_min, y_min + (i + 0.5) / resolution * (y_max - y_min), 
-                               z_min + (j + 0.5) / resolution * (z_max - z_min)]
+    for i in range(resolution-1):
+        for j in range(resolution-1):
+            # base ray origin calculation
+            if axis==0:
+                base_origin = [x_min, 0.5*(y[i+1]+y[i]), 0.5*(z[j+1]+z[j])]
                 directions = [(1.0, 0.0, 0.0)]
-            elif axis == 'y':
-                base_origin = [x_min + (i + 0.5) / resolution * (x_max - x_min), y_min, 
-                               z_min + (j + 0.5) / resolution * (z_max - z_min)]
+            elif axis==1:
+                base_origin = [0.5*(x[i+1]+x[i]), y_min, 0.5*(z[j+1]+z[i])]
                 directions = [(0.0, 1.0, 0.0)]
-            else:  # axis == 'z'
-                base_origin = [x_min + (i + 0.5) / resolution * (x_max - x_min), 
-                               y_min + (j + 0.5) / resolution * (y_max - y_min), z_min]
+            else:  # axis == 2
+                base_origin = [0.5*(x[i+1]+x[i]), 0.5*(y[i+1]+y[i]), z_min]
                 directions = [(0.0, 0.0, 1.0)]
 
             # Add staggered rays if sampling is enabled
             if sample:
-                if axis == 'x':
+                if axis==0:
                     offsets = [(0, offset_factor, 0), (0, -offset_factor, 0), 
                                (0, 0, offset_factor), (0, 0, -offset_factor)]
-                elif axis == 'y':
+                elif axis==1:
                     offsets = [(offset_factor, 0, 0), (-offset_factor, 0, 0), 
                                (0, 0, offset_factor), (0, 0, -offset_factor)]
-                else:  # axis == 'z'
+                else: 
                     offsets = [(offset_factor, 0, 0), (-offset_factor, 0, 0), 
                                (0, offset_factor, 0), (0, -offset_factor, 0)]
 
@@ -270,16 +216,27 @@ def dump_rays_to_file(rays, filename):
             file.write(f"Origin: {ray_origin}, Direction: {ray_direction}\n")
 
 
+
 def trace(axis):
     # intersects are cell-based, not node-based
-    intersects = np.zeros((resolution-1, resolution-1, resolution-1), dtype=np.bool_)
+    #intersects = np.zeros((resolution-1, resolution-1, resolution-1), dtype=np.bool_)
+    if axis==0:
+        intersects = np.zeros((resolution, resolution-1, resolution-1), dtype=np.bool_)
+    elif axis==1:
+        intersects = np.zeros((resolution-1, resolution, resolution-1), dtype=np.bool_)
+    elif axis==2:
+        intersects = np.zeros((resolution-1, resolution-1, resolution), dtype=np.bool_)
     rays = initialize_rays(axis, resolution, x_min, x_max, y_min, y_max, z_min, z_max)
+    print(axis)
+    dump_rays_to_file(rays, 'rays.txt')
+    breakpoint()
     rays_ = cuda.to_device(rays)
     intersects_ = cuda.to_device(intersects)
 
     blocks_per_grid = max((rays.size + THREADS_PER_BLOCK - 1) // THREADS_PER_BLOCK, 320)
     trace_rays[blocks_per_grid, THREADS_PER_BLOCK] \
-        (rays_, tris_, intersects_, x_min, x_max, y_min, y_max, z_min, z_max, resolution)
+        (rays_, tris_, intersects_, x_min, x_max, y_min, y_max, z_min, z_max, resolution,\
+        axis)
     cuda.synchronize()
     
     intersects = intersects_.copy_to_host()
@@ -288,9 +245,12 @@ def trace(axis):
     return intersects
 
 # perform ray tracing along each axis
-x_intersects = trace('x')
-y_intersects = trace('y')
-z_intersects = trace('z')
+x_intersects = trace(0)
+print(x_intersects.shape)
+y_intersects = trace(1)
+print(y_intersects.shape)
+z_intersects = trace(2)
+print(z_intersects.shape)
 
 
 # reconstruct stair-stepped mesh
@@ -299,16 +259,14 @@ all_triangles = []
 # process x_intersects
 for z_index in range(x_intersects.shape[2]):
     for y_index in range(x_intersects.shape[1]):
-        flag = 'minus'  # start with 'minus' for each new line in x
+        flag = 'minus'  # always minus 
         for x_index in range(x_intersects.shape[0]):
             if x_intersects[x_index, y_index, z_index]:
                 # get the nodes for the face
-                nodes = get_face_nodes([x_index, y_index, z_index], flag, 'x')
+                nodes = get_face_nodes([x_index, y_index, z_index], 'x')
                 # get the triangles from the nodes
                 triangles = create_tris_from_nodes(nodes, flag, 'x')
                 all_triangles.extend(triangles)
-                # alternate the flag
-                flag = 'plus' if flag == 'minus' else 'minus'
 
 # process y_intersects
 for z_index in range(y_intersects.shape[2]):
@@ -316,10 +274,9 @@ for z_index in range(y_intersects.shape[2]):
         flag = 'minus'
         for y_index in range(y_intersects.shape[1]):
             if y_intersects[x_index, y_index, z_index]:
-                nodes = get_face_nodes([x_index, y_index, z_index], flag, 'y')
+                nodes = get_face_nodes([x_index, y_index, z_index], 'y')
                 triangles = create_tris_from_nodes(nodes, flag, 'y')
                 all_triangles.extend(triangles)
-                flag = 'plus' if flag == 'minus' else 'minus'
 
 # process z_intersects
 for y_index in range(z_intersects.shape[1]):
@@ -327,10 +284,9 @@ for y_index in range(z_intersects.shape[1]):
         flag = 'minus'
         for z_index in range(z_intersects.shape[2]):
             if z_intersects[x_index, y_index, z_index]:
-                nodes = get_face_nodes([x_index, y_index, z_index], flag, 'z')
+                nodes = get_face_nodes([x_index, y_index, z_index], 'z')
                 triangles = create_tris_from_nodes(nodes, flag, 'z')
                 all_triangles.extend(triangles)
-                flag = 'plus' if flag == 'minus' else 'minus'
 
 # create mesh
 num_triangles = len(all_triangles)
@@ -342,3 +298,11 @@ for i, triangle in enumerate(all_triangles):
         stl_mesh.vectors[i][j] = triangle[j]
 
 stl_mesh.save('output.stl')
+
+
+# GI's attribution algorithm
+# for x-rays: initialize intersects_(resolution, resolution-1, resolution-1)
+# when ray intersects tri, convert (xp,yp,zp) to (xf_id, yf_id, zf_id)
+# ERROR: rays are not being initialized correctly! FIXED.
+# TODO: double check new init rays routine, w/ and w/o offset
+# update broken unittests and add test for init rays
