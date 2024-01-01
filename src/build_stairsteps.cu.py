@@ -4,12 +4,13 @@ from numba import cuda
 from helpers import compute_bbox
 from kernels import ray_intersects_tri, get_face_ids, trace_rays
 
-THREADS_PER_BLOCK = 128  
+THREADS_PER_BLOCK = 128
 
 # load test STL
-stl_mesh = mesh.Mesh.from_file('../utils/sphere.stl')
+stl_mesh = mesh.Mesh.from_file('../utils/cube.stl')
 # ensure triangles are numpy arrays for GPU usage
 tris = np.array(stl_mesh.vectors, dtype=np.float32)
+print(tris)
 # keep tris on GPU while ray-tracing in all 3 directions
 tris_ = cuda.to_device(tris)
 
@@ -21,7 +22,7 @@ Ray = np.dtype([('origin',    np.float32, (3,)),
 x_min, x_max, y_min, y_max, z_min, z_max = compute_bbox(stl_mesh)
 print("bounding box with buffer:", x_min, x_max, y_min, y_max, z_min, z_max)
 
-resolution = 3
+resolution = 8
 
 # coordinates of nodes
 x = np.linspace(x_min, x_max, resolution)
@@ -101,36 +102,29 @@ def get_face_nodes(face_index, dimension):
     that make up the face. The face is determined by the 'dimension' (x, y, or z).
     The index refers to the face index in the specified dimension.
     """
-    x_index, y_index, z_index = face_index
+    xid, yid, zid = face_index
     
     if dimension == 'x':
-        # In this case, y and z indices can go from 0 to resolution-1
-        # But x_index should be fixed for the face, and go from 0 to resolution-2
         nodes = [
-            (X[x_index], Y[y_index], Z[z_index]),
-            (X[x_index], Y[y_index+1], Z[z_index]),
-            (X[x_index], Y[y_index+1], Z[z_index+1]),
-            (X[x_index], Y[y_index], Z[z_index+1])
+            (X[xid, yid, zid],     Y[xid, yid, zid],     Z[xid, yid, zid]),
+            (X[xid, yid+1, zid],   Y[xid, yid+1, zid],   Z[xid, yid+1, zid]),
+            (X[xid, yid+1, zid+1], Y[xid, yid+1, zid+1], Z[xid, yid+1, zid+1]),
+            (X[xid, yid, zid+1],   Y[xid, yid, zid+1],   Z[xid, yid, zid+1])
         ]
     elif dimension == 'y':
-        # In this case, x and z indices can go from 0 to resolution-1
-        # But y_index should be fixed for the face, and go from 0 to resolution-2
         nodes = [
-            (X[x_index], Y[y_index], Z[z_index]),
-            (X[x_index+1], Y[y_index], Z[z_index]),
-            (X[x_index+1], Y[y_index], Z[z_index+1]),
-            (X[x_index], Y[y_index], Z[z_index+1])
+            (X[xid, yid, zid],     Y[xid, yid, zid],     Z[xid, yid, zid]),
+            (X[xid+1, yid, zid],   Y[xid+1, yid, zid],   Z[xid+1, yid, zid]),
+            (X[xid+1, yid, zid+1], Y[xid+1, yid, zid+1], Z[xid+1, yid, zid+1]),
+            (X[xid, yid, zid+1],   Y[xid, yid, zid+1],   Z[xid, yid, zid+1])
         ]
     elif dimension == 'z':
-        # In this case, x and y indices can go from 0 to resolution-1
-        # But z_index should be fixed for the face, and go from 0 to resolution-2
         nodes = [
-            (X[x_index], Y[y_index], Z[z_index]),
-            (X[x_index+1], Y[y_index], Z[z_index]),
-            (X[x_index+1], Y[y_index+1], Z[z_index]),
-            (X[x_index], Y[y_index+1], Z[z_index])
+            (X[xid, yid, zid],     Y[xid, yid, zid],     Z[xid, yid, zid]),
+            (X[xid+1, yid, zid],   Y[xid+1, yid, zid],   Z[xid+1, yid, zid]),
+            (X[xid+1, yid+1, zid], Y[xid+1, yid+1, zid], Z[xid+1, yid+1, zid]),
+            (X[xid, yid+1, zid],   Y[xid, yid+1, zid],   Z[xid, yid+1, zid])
         ]
-    print(nodes)
 
     return nodes
 
@@ -207,14 +201,12 @@ def initialize_rays(axis, resolution, x_min, x_max, y_min, y_max, z_min, z_max, 
     return np.array(ray_data, dtype=[('origin', 'f4', (3,)), ('direction', 'f4', (3,))])
 
 
-
 def dump_rays_to_file(rays, filename):
     with open(filename, 'w') as file:
         for ray in rays:
             ray_origin = ray['origin']
             ray_direction = ray['direction']
             file.write(f"Origin: {ray_origin}, Direction: {ray_direction}\n")
-
 
 
 def trace(axis):
@@ -227,21 +219,23 @@ def trace(axis):
     elif axis==2:
         intersects = np.zeros((resolution-1, resolution-1, resolution), dtype=np.bool_)
     rays = initialize_rays(axis, resolution, x_min, x_max, y_min, y_max, z_min, z_max)
-    print(axis)
-    dump_rays_to_file(rays, 'rays.txt')
-    breakpoint()
+    dump_rays_to_file(rays, f'rays{axis}.txt')
     rays_ = cuda.to_device(rays)
     intersects_ = cuda.to_device(intersects)
 
     blocks_per_grid = max((rays.size + THREADS_PER_BLOCK - 1) // THREADS_PER_BLOCK, 320)
+    # STAGMOD
+    intersection_flags = cuda.device_array(rays.shape[0], dtype=np.int32)
     trace_rays[blocks_per_grid, THREADS_PER_BLOCK] \
         (rays_, tris_, intersects_, x_min, x_max, y_min, y_max, z_min, z_max, resolution,\
-        axis)
+        axis, intersection_flags)
     cuda.synchronize()
     
     intersects = intersects_.copy_to_host()
     del rays_, intersects_
     print(f"Total intersections along {axis}-axis:", np.sum(intersects))
+    total_intersections = intersection_flags.copy_to_host().sum()
+    print("Total intersections:", total_intersections)
     return intersects
 
 # perform ray tracing along each axis
