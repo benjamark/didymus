@@ -57,25 +57,7 @@ def ray_intersects_tri(ray, triangle):
     intersection_point_y = ray['origin'][1] + t * ray['direction'][1]
     intersection_point_z = ray['origin'][2] + t * ray['direction'][2]
 
-
     return True, intersection_point_x, intersection_point_y, intersection_point_z
-
-
-#@cuda.jit(device=True)
-#def get_grid_index(point_x, point_y, point_z, x_min, x_max, y_min, y_max, z_min, z_max, resolution):
-#    """ 
-#    Given a point in the domain, return the index of the 
-#    CELL to which it belongs
-#
-#    """
-#    x_index = int((point_x - x_min) / (x_max - x_min) * (resolution-1))
-#    y_index = int((point_y - y_min) / (y_max - y_min) * (resolution-1))
-#    z_index = int((point_z - z_min) / (z_max - z_min) * (resolution-1))
-#    # handle edge cases
-#    x_index = min(x_index, resolution - 2)
-#    y_index = min(y_index, resolution - 2)
-#    z_index = min(z_index, resolution - 2)
-#    return x_index, y_index, z_index
 
 
 def get_face_ids(point_x, point_y, point_z, x_min, x_max, y_min, y_max, z_min, z_max, resolution, axis):
@@ -97,8 +79,6 @@ def get_face_ids(point_x, point_y, point_z, x_min, x_max, y_min, y_max, z_min, z
         yf_id = round(y_normalized * (resolution - 2))
         zf_id = round(z_normalized * (resolution - 1))
 
-    #print(point_x, point_y, point_z)
-    #print(xf_id, yf_id, zf_id)
     return xf_id, yf_id, zf_id
 
 
