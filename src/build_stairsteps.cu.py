@@ -2,14 +2,15 @@ import numpy as np
 from stl import mesh
 from numba import cuda
 from helpers import compute_bbox
-from kernels import ray_intersects_tri, get_face_ids, trace_rays
+#from kernels import ray_intersects_tri, get_face_ids, trace_rays
+from kernels_host import ray_intersects_tri, get_face_ids, trace_rays
 
 THREADS_PER_BLOCK = 128
 
 # load test STL
 stl_mesh = mesh.Mesh.from_file('../utils/cube.stl')
 # ensure triangles are numpy arrays for GPU usage
-tris = np.array(stl_mesh.vectors, dtype=np.float32)
+tris = np.array(stl_mesh.vectors, dtype=np.float32)[7:8, :, :]
 print(tris)
 # keep tris on GPU while ray-tracing in all 3 directions
 tris_ = cuda.to_device(tris)
@@ -22,7 +23,7 @@ Ray = np.dtype([('origin',    np.float32, (3,)),
 x_min, x_max, y_min, y_max, z_min, z_max = compute_bbox(stl_mesh)
 print("bounding box with buffer:", x_min, x_max, y_min, y_max, z_min, z_max)
 
-resolution = 8
+resolution = 3
 
 # coordinates of nodes
 x = np.linspace(x_min, x_max, resolution)
@@ -171,10 +172,10 @@ def initialize_rays(axis, resolution, x_min, x_max, y_min, y_max, z_min, z_max, 
                 base_origin = [x_min, 0.5*(y[i+1]+y[i]), 0.5*(z[j+1]+z[j])]
                 directions = [(1.0, 0.0, 0.0)]
             elif axis==1:
-                base_origin = [0.5*(x[i+1]+x[i]), y_min, 0.5*(z[j+1]+z[i])]
+                base_origin = [0.5*(x[i+1]+x[i]), y_min, 0.5*(z[j+1]+z[j])]
                 directions = [(0.0, 1.0, 0.0)]
             else:  # axis == 2
-                base_origin = [0.5*(x[i+1]+x[i]), 0.5*(y[i+1]+y[i]), z_min]
+                base_origin = [0.5*(x[i+1]+x[i]), 0.5*(y[j+1]+y[j]), z_min]
                 directions = [(0.0, 0.0, 1.0)]
 
             # Add staggered rays if sampling is enabled
@@ -209,6 +210,30 @@ def dump_rays_to_file(rays, filename):
             file.write(f"Origin: {ray_origin}, Direction: {ray_direction}\n")
 
 
+# STAGMOD
+
+def trace_host(axis):
+    # intersects are cell-based, not node-based
+    #intersects = np.zeros((resolution-1, resolution-1, resolution-1), dtype=np.bool_)
+    if axis==0:
+        intersects = np.zeros((resolution, resolution-1, resolution-1), dtype=np.bool_)
+    elif axis==1:
+        intersects = np.zeros((resolution-1, resolution, resolution-1), dtype=np.bool_)
+    elif axis==2:
+        intersects = np.zeros((resolution-1, resolution-1, resolution), dtype=np.bool_)
+    rays = initialize_rays(axis, resolution, x_min, x_max, y_min, y_max, z_min, z_max)
+    print(rays)
+    dump_rays_to_file(rays, f'rays{axis}.txt')
+
+    trace_rays(rays, tris, intersects, x_min, x_max, y_min, y_max, z_min, z_max, resolution, axis)
+    
+    print(f"Total intersections along {axis}-axis:", np.sum(intersects))
+    return intersects
+
+
+#test_x = trace_host(1)
+#breakpoint()
+
 def trace(axis):
     # intersects are cell-based, not node-based
     #intersects = np.zeros((resolution-1, resolution-1, resolution-1), dtype=np.bool_)
@@ -235,15 +260,16 @@ def trace(axis):
     del rays_, intersects_
     print(f"Total intersections along {axis}-axis:", np.sum(intersects))
     total_intersections = intersection_flags.copy_to_host().sum()
-    print("Total intersections:", total_intersections)
+    print("Total violations:", total_intersections)
     return intersects
 
+
 # perform ray tracing along each axis
-x_intersects = trace(0)
+x_intersects = trace_host(0)
 print(x_intersects.shape)
-y_intersects = trace(1)
+y_intersects = trace_host(1)
 print(y_intersects.shape)
-z_intersects = trace(2)
+z_intersects = trace_host(2)
 print(z_intersects.shape)
 
 

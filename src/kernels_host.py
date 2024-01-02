@@ -1,7 +1,5 @@
-from numba import cuda
 import numpy as np
 
-@cuda.jit(device=True)
 def ray_intersects_tri(ray, triangle):
     # Get triangle vertices
     v1, v2, v3 = triangle
@@ -59,6 +57,7 @@ def ray_intersects_tri(ray, triangle):
     intersection_point_y = ray['origin'][1] + t * ray['direction'][1]
     intersection_point_z = ray['origin'][2] + t * ray['direction'][2]
 
+
     return True, intersection_point_x, intersection_point_y, intersection_point_z
 
 
@@ -79,7 +78,6 @@ def ray_intersects_tri(ray, triangle):
 #    return x_index, y_index, z_index
 
 
-@cuda.jit(device=True)
 def get_face_ids(point_x, point_y, point_z, x_min, x_max, y_min, y_max, z_min, z_max, resolution, axis):
     # Normalize the point coordinates within the grid range
     x_normalized = (point_x - x_min) / (x_max - x_min)
@@ -99,19 +97,17 @@ def get_face_ids(point_x, point_y, point_z, x_min, x_max, y_min, y_max, z_min, z
         yf_id = round(y_normalized * (resolution - 2))
         zf_id = round(z_normalized * (resolution - 1))
 
+    #print(point_x, point_y, point_z)
+    #print(xf_id, yf_id, zf_id)
     return xf_id, yf_id, zf_id
 
 
-@cuda.jit
-def trace_rays(rays, triangles, intersection_grid, x_min, x_max, y_min, y_max, z_min, z_max, resolution, axis, intersection_flags):
-    ray_idx = cuda.grid(1)
-    if ray_idx < rays.shape[0]:
-        ray = rays[ray_idx]
+def trace_rays(rays, triangles, intersection_grid, x_min, x_max, y_min, y_max, z_min, z_max, resolution, axis):
+    for ray in rays:
         for j in range(triangles.shape[0]):
             intersects, point_x, point_y, point_z = ray_intersects_tri(ray, triangles[j])
             if intersects:
-                # STAGMOD
-                intersection_flags[ray_idx] = 1
+
                 x_idx, y_idx, z_idx = get_face_ids( \
                 point_x, point_y, point_z, x_min, x_max, y_min, y_max, z_min, z_max, resolution, axis)
                 intersection_grid[x_idx, y_idx, z_idx] = True
