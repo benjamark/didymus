@@ -1,6 +1,8 @@
 import numpy as np
 from stl import mesh
 from numba import cuda
+from collections import defaultdict
+
 from helpers import compute_bbox
 
 ENABLE_CUDA = 1
@@ -13,7 +15,7 @@ else:
 THREADS_PER_BLOCK = 128
 
 # load test STL
-stl_mesh = mesh.Mesh.from_file('../utils/sphere.stl')
+stl_mesh = mesh.Mesh.from_file('../utils/shapenet/2.stl')
 # ensure triangles are numpy arrays for GPU usage
 tris = np.array(stl_mesh.vectors, dtype=np.float32)#[7:8, :, :]
 print(tris)
@@ -28,14 +30,14 @@ Ray = np.dtype([('origin',    np.float32, (3,)),
 x_min, x_max, y_min, y_max, z_min, z_max = compute_bbox(stl_mesh)
 print("bounding box with buffer:", x_min, x_max, y_min, y_max, z_min, z_max)
 
-resolution = 5
+resolution = 128
 
 # coordinates of nodes
 x = np.linspace(x_min, x_max, resolution)
 y = np.linspace(y_min, y_max, resolution)
 z = np.linspace(z_min, z_max, resolution)
 
-# grid of nodes 
+# grid of nodes
 X, Y, Z = np.meshgrid(x, y, z, indexing='ij')
 
 
@@ -259,6 +261,7 @@ def trace(axis):
     intersects = intersects_.copy_to_host()
     del rays_, intersects_
     print(f"Total intersections along {axis}-axis:", np.sum(intersects))
+    # STAGMOD
     total_intersections = intersection_flags.copy_to_host().sum()
     print("Total violations:", total_intersections)
     return intersects
@@ -316,6 +319,38 @@ for y_index in range(z_intersects.shape[1]):
                 triangles = create_tris_from_nodes(nodes, flag, 'z')
                 all_triangles.extend(triangles)
 
+
+def remove_open_edges(triangles):
+    edge_to_triangle = defaultdict(list)
+    for i, triangle in enumerate(triangles):
+        # Construct edges with sorted vertex indices to be comparable
+        edges = [tuple(sorted([triangle[j], triangle[(j + 1) % 3]])) for j in range(3)]
+        for edge in edges:
+            edge_to_triangle[edge].append(i)
+
+    # Identify edges that belong to only one triangle, these are open edges
+    open_edges = {edge for edge, tris in edge_to_triangle.items() if len(tris) == 1}
+
+    # Triangles to delete are those that have an open edge
+    triangles_to_delete = set()
+    for edge in open_edges:
+        triangles_to_delete.update(edge_to_triangle[edge])
+
+    # Return new list without the triangles that have open edges
+    return [triangle for i, triangle in enumerate(triangles) if i not in triangles_to_delete]
+
+
+# iteratively remove open edges until converged
+previous_len = -1
+current_len = len(all_triangles)
+
+while previous_len != current_len:
+    previous_len = current_len
+    all_triangles = remove_open_edges(all_triangles)
+    current_len = len(all_triangles)
+    print(current_len)
+
+
 # create mesh
 num_triangles = len(all_triangles)
 stl_mesh = mesh.Mesh(np.zeros(num_triangles, dtype=mesh.Mesh.dtype))
@@ -326,11 +361,3 @@ for i, triangle in enumerate(all_triangles):
         stl_mesh.vectors[i][j] = triangle[j]
 
 stl_mesh.save('output.stl')
-
-
-# GI's attribution algorithm
-# for x-rays: initialize intersects_(resolution, resolution-1, resolution-1)
-# when ray intersects tri, convert (xp,yp,zp) to (xf_id, yf_id, zf_id)
-# ERROR: rays are not being initialized correctly! FIXED.
-# TODO: double check new init rays routine, w/ and w/o offset. DONE
-# update broken unittests and add test for init rays
