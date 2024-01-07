@@ -1,11 +1,15 @@
 import numpy as np
 from stl import mesh
 from numba import cuda
+import trimesh
 from collections import defaultdict
 
 from helpers import compute_bbox
 
 ENABLE_CUDA = 1
+BBOX_TYPE = 'prop'  # 'prop' or 'cube'
+REMOVE_OPEN_EDGES = 0
+ENABLE_RAY_SAMPLING = 0
 
 if ENABLE_CUDA:
     from kernels import ray_intersects_tri, get_face_ids, trace_rays
@@ -15,10 +19,11 @@ else:
 THREADS_PER_BLOCK = 128
 
 # load test STL
-stl_mesh = mesh.Mesh.from_file('../utils/shapenet/2.stl')
+stl_mesh = mesh.Mesh.from_file('../utils/drivAer/configN_22k.stl')
 # ensure triangles are numpy arrays for GPU usage
 tris = np.array(stl_mesh.vectors, dtype=np.float32)#[7:8, :, :]
-print(tris)
+
+
 # keep tris on GPU while ray-tracing in all 3 directions
 tris_ = cuda.to_device(tris)
 
@@ -28,63 +33,26 @@ Ray = np.dtype([('origin',    np.float32, (3,)),
 
 # create background structured mesh
 x_min, x_max, y_min, y_max, z_min, z_max = compute_bbox(stl_mesh)
+if BBOX_TYPE == 'cube':
+    x_min = min(x_min, y_min, z_min)
+    y_min = min(x_min, y_min, z_min)
+    z_min = min(x_min, y_min, z_min)
+    x_max = max(x_max, y_max, z_max)
+    y_max = max(x_max, y_max, z_max)
+    z_max = max(x_max, y_max, z_max)
 print("bounding box with buffer:", x_min, x_max, y_min, y_max, z_min, z_max)
 
-resolution = 128
+resolution = 256
 
 # coordinates of nodes
 x = np.linspace(x_min, x_max, resolution)
 y = np.linspace(y_min, y_max, resolution)
 z = np.linspace(z_min, z_max, resolution)
 
+
 # grid of nodes
 X, Y, Z = np.meshgrid(x, y, z, indexing='ij')
 
-
-def test_face_ids(xp, yp, zp):
-    pass
-
-
-def move_vertices_to_closest_node(stl_mesh, X, Y, Z):
-    """
-    Iterates over the vertices in the STL mesh and moves each vertex to the 
-    closest node in the background mesh.
-
-    """
-    for i in range(len(stl_mesh.vectors)):
-        for j in range(3):  # Each triangle has 3 vertices
-            vertex = stl_mesh.vectors[i][j]
-            # Calculate the differences for each dimension
-            dx = np.abs(X - vertex[0])
-            dy = np.abs(Y - vertex[1])
-            dz = np.abs(Z - vertex[2])
-
-            # Find the indices of the closest node
-            closest_idx = np.unravel_index(np.argmin(dx**2 + dy**2 + dz**2), dx.shape)
-
-            # Update the vertex to the closest node
-            stl_mesh.vectors[i][j] = np.array([X[closest_idx], Y[closest_idx], Z[closest_idx]])
-
-    return stl_mesh
-
-
-stl_mesh.save('old.stl')
-
-# shifted grid 
-#dx = 0.0*(x[1]-x[0])
-#dy = 0.0*(y[1]-y[0])
-#dz = 0.0*(z[1]-z[0])
-
-#xs = np.linspace(x_min+dx, x_max+dx, 23)
-#ys = np.linspace(y_min+dy, y_max+dy, 23)
-#zs = np.linspace(z_min+dz, z_max+dz, 23)
-
-# grid of nodes 
-#Xs, Ys, Zs = np.meshgrid(xs, ys, zs, indexing='ij')
-#print(xs)
-
-#stl_mesh = move_vertices_to_closest_node(stl_mesh, Xs, Ys, Zs)
-#stl_mesh.save('new.stl')
 
 def get_grid_index_host(point_x, point_y, point_z):
     """ 
@@ -163,7 +131,7 @@ def create_tris_from_nodes(nodes, flag, dimension):
     return triangle1, triangle2
 
 
-def initialize_rays(axis, resolution, x_min, x_max, y_min, y_max, z_min, z_max, sample=True):
+def initialize_rays(axis, resolution, x_min, x_max, y_min, y_max, z_min, z_max, sample=False):
     """Generate a regular grid of rays along the specified axis, originating
        at the minimum value of the axis. The rays are centered in the face
        normal to the axis. If sample is True, generate staggered rays.
@@ -220,15 +188,13 @@ def dump_rays_to_file(rays, filename):
 
 def trace_host(axis):
     # intersects are cell-based, not node-based
-    #intersects = np.zeros((resolution-1, resolution-1, resolution-1), dtype=np.bool_)
     if axis==0:
         intersects = np.zeros((resolution, resolution-1, resolution-1), dtype=np.bool_)
     elif axis==1:
         intersects = np.zeros((resolution-1, resolution, resolution-1), dtype=np.bool_)
     elif axis==2:
         intersects = np.zeros((resolution-1, resolution-1, resolution), dtype=np.bool_)
-    rays = initialize_rays(axis, resolution, x_min, x_max, y_min, y_max, z_min, z_max)
-    dump_rays_to_file(rays, f'rays{axis}.txt')
+    rays = initialize_rays(axis, resolution, x_min, x_max, y_min, y_max, z_min, z_max, sample=ENABLE_RAY_SAMPLING)
 
     trace_rays(rays, tris, intersects, x_min, x_max, y_min, y_max, z_min, z_max, resolution, axis)
     
@@ -238,15 +204,13 @@ def trace_host(axis):
 
 def trace(axis):
     # intersects are cell-based, not node-based
-    #intersects = np.zeros((resolution-1, resolution-1, resolution-1), dtype=np.bool_)
     if axis==0:
         intersects = np.zeros((resolution, resolution-1, resolution-1), dtype=np.bool_)
     elif axis==1:
         intersects = np.zeros((resolution-1, resolution, resolution-1), dtype=np.bool_)
     elif axis==2:
         intersects = np.zeros((resolution-1, resolution-1, resolution), dtype=np.bool_)
-    rays = initialize_rays(axis, resolution, x_min, x_max, y_min, y_max, z_min, z_max)
-    dump_rays_to_file(rays, f'rays{axis}.txt')
+    rays = initialize_rays(axis, resolution, x_min, x_max, y_min, y_max, z_min, z_max, sample=ENABLE_RAY_SAMPLING)
     rays_ = cuda.to_device(rays)
     intersects_ = cuda.to_device(intersects)
 
@@ -263,25 +227,20 @@ def trace(axis):
     print(f"Total intersections along {axis}-axis:", np.sum(intersects))
     # STAGMOD
     total_intersections = intersection_flags.copy_to_host().sum()
-    print("Total violations:", total_intersections)
     return intersects
 
 
 # perform ray tracing along each axis
 if ENABLE_CUDA:
+    print(f'Ray-tracing on device with {resolution*resolution} rays')
     x_intersects = trace(0)
-    print(x_intersects.shape)
     y_intersects = trace(1)
-    print(y_intersects.shape)
     z_intersects = trace(2)
-    print(z_intersects.shape)
 else:
+    print(f'Ray-tracing on host with {resolution*resolution} rays')
     x_intersects = trace_host(0)
-    print(x_intersects.shape)
     y_intersects = trace_host(1)
-    print(y_intersects.shape)
     z_intersects = trace_host(2)
-    print(z_intersects.shape)
 
 
 # reconstruct stair-stepped mesh
@@ -339,9 +298,13 @@ def remove_open_edges(triangles):
     # Return new list without the triangles that have open edges
     return [triangle for i, triangle in enumerate(triangles) if i not in triangles_to_delete]
 
+stl_mesh.save('a.stl')
 
 # iteratively remove open edges until converged
-previous_len = -1
+if REMOVE_OPEN_EDGES:
+    previous_len = -1
+else:
+    previous_len = len(all_triangles)
 current_len = len(all_triangles)
 
 while previous_len != current_len:
@@ -360,4 +323,11 @@ for i, triangle in enumerate(all_triangles):
     for j in range(3):
         stl_mesh.vectors[i][j] = triangle[j]
 
-stl_mesh.save('output.stl')
+
+# TODO: need better way to moving mesh to trimesh
+stl_mesh.save('b.stl')
+mesh = trimesh.load('b.stl')
+# fix normals using trimesh
+trimesh.repair.fix_normals(mesh)
+
+mesh.export('c.stl')
