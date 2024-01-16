@@ -1,0 +1,7 @@
+{
+    "corner_stls": ["../utils/shapenet/1.stl", "../utils/shapenet/2.stl"],
+    "ENABLE_CUDA": 1,
+    "ENABLE_RAY_SAMPLING": 0,
+    "THREADS_PER_BLOCK": 128,
+    "resolution": 8
+}

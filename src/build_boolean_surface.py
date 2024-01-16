@@ -77,21 +77,10 @@ def initialize_rays(axis, resolution, x_min, x_max, y_min, y_max, z_min, \
                                      ('direction', 'f4', (3,))])
 
 
-def trace_host(axis, cell):
+def trace_host(axis):
     # TODO: make cell mandatory
-    if cell:
-        intersects = np.zeros((resolution-1, resolution-1, resolution-1), \
-                              dtype=np.bool_)
-    else:
-        if axis==0:
-            intersects = np.zeros((resolution, resolution-1, resolution-1), \
-                                  dtype=np.bool_)
-        elif axis==1:
-            intersects = np.zeros((resolution-1, resolution, resolution-1), \
-                                  dtype=np.bool_)
-        elif axis==2:
-            intersects = np.zeros((resolution-1, resolution-1, resolution), \
-                                  dtype=np.bool_)
+    intersects = np.zeros((resolution-1, resolution-1, resolution-1), \
+                          dtype=np.bool_)
 
     rays = initialize_rays(axis, resolution, x_min, x_max, y_min, y_max, \
                            z_min, z_max, sample=ENABLE_RAY_SAMPLING)
@@ -103,22 +92,9 @@ def trace_host(axis, cell):
     return intersects
 
 
-def trace(axis, cell):
-    # TODO: make cell mandatory
-    if cell:
-        intersects = np.zeros((resolution-1, resolution-1, resolution-1), \
-                              dtype=np.bool_)
-    else:
-        # intersects are cell-based, not node-based
-        if axis==0:
-            intersects = np.zeros((resolution, resolution-1, resolution-1), \
-                                  dtype=np.bool_)
-        elif axis==1:
-            intersects = np.zeros((resolution-1, resolution, resolution-1), \
-                                  dtype=np.bool_)
-        elif axis==2:
-            intersects = np.zeros((resolution-1, resolution-1, resolution), \
-                                  dtype=np.bool_)
+def trace(axis):
+    intersects = np.zeros((resolution-1, resolution-1, resolution-1), \
+                          dtype=np.bool_)
 
     rays = initialize_rays(axis, resolution, x_min, x_max, y_min, y_max, \
                            z_min, z_max, sample=ENABLE_RAY_SAMPLING)
@@ -142,17 +118,6 @@ def trace(axis, cell):
     return intersects
 
 simplex_dim = len(corner_stls)
-
-# TODO:
-# 1. implement loop over no. of corner cases. [OK]
-# 2. automate bounding box and domain selection [OK]
-# 3. remove `intersection_flags` and other STAGMODs [OK]
-# 4. integrate host and device kernels [OK]
-# 5. combine three `intersects` arrays into one for GPU
-# 6. implement block ray processing
-# 7. add buffer to bbox [OK]
-# 8. refactor helpers to helpers [OK]
-
 
 # initialize domain boundaries
 x_min, x_max = np.inf, -np.inf
@@ -189,21 +154,21 @@ for idx, stl_file in enumerate(corner_stls):
     stl_mesh = center_bbox(stl_mesh)
 
     # ensure triangles are numpy arrays for GPU usage
-    tris = np.array(stl_mesh.vectors, dtype=np.float32)#[7:8, :, :]
+    tris = np.array(stl_mesh.vectors, dtype=np.float32)
     # keep tris on GPU while ray-tracing in all 3 directions
     tris_ = cuda.to_device(tris)
 
     # perform ray tracing along each axis
     if ENABLE_CUDA:
         print(f'Ray-tracing on device with {resolution*resolution} rays')
-        x_intersects = trace(0, cell='True')
-        y_intersects = trace(1, cell='True')
-        z_intersects = trace(2, cell='True')
+        x_intersects = trace(0)
+        y_intersects = trace(1)
+        z_intersects = trace(2)
     else:
         print(f'Ray-tracing on host with {resolution*resolution} rays')
-        x_intersects = trace_host(0, cell='True')
-        y_intersects = trace_host(1, cell='True')
-        z_intersects = trace_host(2, cell='True')
+        x_intersects = trace_host(0)
+        y_intersects = trace_host(1)
+        z_intersects = trace_host(2)
 
     print(np.sum(x_intersects))
     print(np.sum(y_intersects))
@@ -211,4 +176,3 @@ for idx, stl_file in enumerate(corner_stls):
     intersects = x_intersects +y_intersects +z_intersects
     print(np.sum(intersects))
     np.save(f'{path_to_bools}/corner_{idx}.npy', intersects)
-
