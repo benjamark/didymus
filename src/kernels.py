@@ -100,16 +100,14 @@ def get_face_ids(point_x, point_y, point_z, x_min, x_max, y_min, y_max, z_min, z
 
 
 @cuda.jit
-def trace_rays(rays, triangles, intersection_grid, x_min, x_max, y_min, y_max, z_min, z_max, resolution, axis, intersection_flags):
+def trace_rays(rays, triangles, intersection_grid, x_min, x_max, y_min, \
+               y_max, z_min, z_max, resolution, axis):
     ray_idx = cuda.grid(1)
     if ray_idx < rays.shape[0]:
         ray = rays[ray_idx]
         for j in range(triangles.shape[0]):
             intersects, point_x, point_y, point_z = ray_intersects_tri(ray, triangles[j])
             if intersects:
-                # STAGMOD
-                intersection_flags[ray_idx] = 1
-                # STAGMOD
                 x_idx, y_idx, z_idx = get_cell_ids( \
                 point_x, point_y, point_z, x_min, x_max, y_min, y_max, z_min, z_max, resolution, axis)
                 intersection_grid[x_idx, y_idx, z_idx] = True

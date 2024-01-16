@@ -74,6 +74,7 @@ def initialize_rays(axis, resolution, x_min, x_max, y_min, y_max, z_min, \
 
 
 def trace_host(axis, cell):
+    # TODO: make cell mandatory
     if cell:
         intersects = np.zeros((resolution-1, resolution-1, resolution-1), \
                               dtype=np.bool_)
@@ -99,6 +100,7 @@ def trace_host(axis, cell):
 
 
 def trace(axis, cell):
+    # TODO: make cell mandatory
     if cell:
         intersects = np.zeros((resolution-1, resolution-1, resolution-1), \
                               dtype=np.bool_)
@@ -122,19 +124,17 @@ def trace(axis, cell):
 
     blocks_per_grid = max((rays.size + THREADS_PER_BLOCK - 1) \
                           // THREADS_PER_BLOCK, 320)
-    # STAGMOD
-    intersection_flags = cuda.device_array(rays.shape[0], dtype=np.int32)
+
     trace_rays[blocks_per_grid, THREADS_PER_BLOCK] \
         (rays_, tris_, intersects_, x_min, x_max, y_min, y_max, z_min, \
-        z_max, resolution, axis, intersection_flags)
+        z_max, resolution, axis)
 
     cuda.synchronize()
     
     intersects = intersects_.copy_to_host()
     del rays_, intersects_
     print(f"Total intersections along {axis}-axis:", np.sum(intersects))
-    # STAGMOD
-    total_intersections = intersection_flags.copy_to_host().sum()
+
     return intersects
 
 corner_stls = ['../utils/shapenet/1.stl', '../utils/shapenet/2.stl']
@@ -143,7 +143,7 @@ simplex_dim = len(corner_stls)
 # TODO:
 # 1. implement loop over no. of corner cases. [OK]
 # 2. automate bounding box and domain selection [OK]
-# 3. remove `intersection_flags` and other STAGMODs
+# 3. remove `intersection_flags` and other STAGMODs [OK]
 # 4. integrate host and device kernels [OK]
 # 5. combine three `intersects` arrays into one for GPU
 # 6. implement block ray processing

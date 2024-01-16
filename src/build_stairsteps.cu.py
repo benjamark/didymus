@@ -235,18 +235,14 @@ def trace(axis, cell):
     intersects_ = cuda.to_device(intersects)
 
     blocks_per_grid = max((rays.size + THREADS_PER_BLOCK - 1) // THREADS_PER_BLOCK, 320)
-    # STAGMOD
-    intersection_flags = cuda.device_array(rays.shape[0], dtype=np.int32)
     trace_rays[blocks_per_grid, THREADS_PER_BLOCK] \
         (rays_, tris_, intersects_, x_min, x_max, y_min, y_max, z_min, z_max, resolution,\
-        axis, intersection_flags)
+        axis)
     cuda.synchronize()
     
     intersects = intersects_.copy_to_host()
     del rays_, intersects_
     print(f"Total intersections along {axis}-axis:", np.sum(intersects))
-    # STAGMOD
-    total_intersections = intersection_flags.copy_to_host().sum()
     return intersects
 
 
