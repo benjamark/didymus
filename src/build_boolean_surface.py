@@ -4,13 +4,17 @@ from numba import cuda
 import trimesh
 import os
 from collections import defaultdict
-from helpers import compute_bbox, center_bbox, dump_rays_to_file
+from helpers import compute_bbox, center_bbox, dump_rays_to_file, load_config
 
+# load configuration file
+config = load_config()
 
-ENABLE_CUDA = 1
-BBOX_TYPE = 'manual'  # 'prop' or 'cube' or 'manual'
-REMOVE_OPEN_EDGES = 0
-ENABLE_RAY_SAMPLING = 0
+corner_stls = config["corner_stls"]
+ENABLE_CUDA = config["ENABLE_CUDA"]
+ENABLE_RAY_SAMPLING = config["ENABLE_RAY_SAMPLING"]
+THREADS_PER_BLOCK = config["THREADS_PER_BLOCK"]
+resolution = config["resolution"]
+
 
 if ENABLE_CUDA:
     from kernels import ray_intersects_tri, get_cell_ids, trace_rays
@@ -137,7 +141,6 @@ def trace(axis, cell):
 
     return intersects
 
-corner_stls = ['../utils/shapenet/1.stl', '../utils/shapenet/2.stl']
 simplex_dim = len(corner_stls)
 
 # TODO:
@@ -148,9 +151,8 @@ simplex_dim = len(corner_stls)
 # 5. combine three `intersects` arrays into one for GPU
 # 6. implement block ray processing
 # 7. add buffer to bbox [OK]
-# 8. refactor helpers to helpers
+# 8. refactor helpers to helpers [OK]
 
-THREADS_PER_BLOCK = 128
 
 # initialize domain boundaries
 x_min, x_max = np.inf, -np.inf
@@ -173,7 +175,6 @@ for stl_file in corner_stls:
 
 print("bounding box with buffer:", x_min, x_max, y_min, y_max, z_min, z_max)
 
-resolution = 8
 
 # coordinates of nodes
 x = np.linspace(x_min, x_max, resolution)
@@ -181,6 +182,7 @@ y = np.linspace(y_min, y_max, resolution)
 z = np.linspace(z_min, z_max, resolution)
 # grid of nodes
 X, Y, Z = np.meshgrid(x, y, z, indexing='ij')
+
 
 for idx, stl_file in enumerate(corner_stls):
     stl_mesh = mesh.Mesh.from_file(stl_file)

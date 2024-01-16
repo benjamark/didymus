@@ -1,4 +1,5 @@
 import numpy as np
+import json
 
 def compute_bbox(stl_mesh, buffer_percent=5):
     """
@@ -46,3 +47,10 @@ def dump_rays_to_file(rays, filename):
             ray_origin = ray['origin']
             ray_direction = ray['direction']
             file.write(f"Origin: {ray_origin}, Direction: {ray_direction}\n")
+
+
+def load_config(config_file='config.json'):
+    with open(config_file, 'r') as file:
+        config = json.load(file)
+    return config
+
