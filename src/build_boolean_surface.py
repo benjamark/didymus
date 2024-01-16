@@ -10,12 +10,12 @@ from helpers import compute_bbox, center_bbox, dump_rays_to_file
 ENABLE_CUDA = 1
 BBOX_TYPE = 'manual'  # 'prop' or 'cube' or 'manual'
 REMOVE_OPEN_EDGES = 0
-ENABLE_RAY_SAMPLING = 1
+ENABLE_RAY_SAMPLING = 0
 
 if ENABLE_CUDA:
-    from kernels import ray_intersects_tri, get_face_ids, trace_rays
+    from kernels import ray_intersects_tri, get_cell_ids, trace_rays
 else:
-    from kernels_host import ray_intersects_tri, get_face_ids, trace_rays
+    from kernels_host import ray_intersects_tri, get_cell_ids, trace_rays
 
 path_to_bools = 'npys'
 os.makedirs(path_to_bools, exist_ok=True)
@@ -73,17 +73,20 @@ def initialize_rays(axis, resolution, x_min, x_max, y_min, y_max, z_min, \
                                      ('direction', 'f4', (3,))])
 
 
-def trace_host(axis):
-    # intersects are cell-based, not node-based
-    if axis==0:
-        intersects = np.zeros((resolution, resolution-1, resolution-1), \
+def trace_host(axis, cell):
+    if cell:
+        intersects = np.zeros((resolution-1, resolution-1, resolution-1), \
                               dtype=np.bool_)
-    elif axis==1:
-        intersects = np.zeros((resolution-1, resolution, resolution-1), \
-                              dtype=np.bool_)
-    elif axis==2:
-        intersects = np.zeros((resolution-1, resolution-1, resolution), \
-                              dtype=np.bool_)
+    else:
+        if axis==0:
+            intersects = np.zeros((resolution, resolution-1, resolution-1), \
+                                  dtype=np.bool_)
+        elif axis==1:
+            intersects = np.zeros((resolution-1, resolution, resolution-1), \
+                                  dtype=np.bool_)
+        elif axis==2:
+            intersects = np.zeros((resolution-1, resolution-1, resolution), \
+                                  dtype=np.bool_)
 
     rays = initialize_rays(axis, resolution, x_min, x_max, y_min, y_max, \
                            z_min, z_max, sample=ENABLE_RAY_SAMPLING)
@@ -141,7 +144,7 @@ simplex_dim = len(corner_stls)
 # 1. implement loop over no. of corner cases. [OK]
 # 2. automate bounding box and domain selection [OK]
 # 3. remove `intersection_flags` and other STAGMODs
-# 4. integrate host and device kernels
+# 4. integrate host and device kernels [OK]
 # 5. combine three `intersects` arrays into one for GPU
 # 6. implement block ray processing
 # 7. add buffer to bbox [OK]
@@ -170,7 +173,7 @@ for stl_file in corner_stls:
 
 print("bounding box with buffer:", x_min, x_max, y_min, y_max, z_min, z_max)
 
-resolution = 32
+resolution = 8
 
 # coordinates of nodes
 x = np.linspace(x_min, x_max, resolution)
@@ -196,9 +199,9 @@ for idx, stl_file in enumerate(corner_stls):
         z_intersects = trace(2, cell='True')
     else:
         print(f'Ray-tracing on host with {resolution*resolution} rays')
-        x_intersects = trace_host(0)
-        y_intersects = trace_host(1)
-        z_intersects = trace_host(2)
+        x_intersects = trace_host(0, cell='True')
+        y_intersects = trace_host(1, cell='True')
+        z_intersects = trace_host(2, cell='True')
 
     print(np.sum(x_intersects))
     print(np.sum(y_intersects))
