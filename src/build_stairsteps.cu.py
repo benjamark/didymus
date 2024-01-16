@@ -4,12 +4,12 @@ from numba import cuda
 import trimesh
 from collections import defaultdict
 
-from helpers import compute_bbox
+from helpers import compute_bbox, center_bbox
 
 ENABLE_CUDA = 1
-BBOX_TYPE = 'prop'  # 'prop' or 'cube'
+BBOX_TYPE = 'manual'  # 'prop' or 'cube' or 'manual'
 REMOVE_OPEN_EDGES = 0
-ENABLE_RAY_SAMPLING = 0
+ENABLE_RAY_SAMPLING = 1
 
 if ENABLE_CUDA:
     from kernels import ray_intersects_tri, get_face_ids, trace_rays
@@ -19,10 +19,11 @@ else:
 THREADS_PER_BLOCK = 128
 
 # load test STL
-stl_mesh = mesh.Mesh.from_file('../utils/drivAer/configN_22k.stl')
+stl_mesh = mesh.Mesh.from_file('../utils/shapenet/1.stl')
+# center STL bounding box
+stl_mesh = center_bbox(stl_mesh)
 # ensure triangles are numpy arrays for GPU usage
 tris = np.array(stl_mesh.vectors, dtype=np.float32)#[7:8, :, :]
-
 
 # keep tris on GPU while ray-tracing in all 3 directions
 tris_ = cuda.to_device(tris)
@@ -32,14 +33,30 @@ Ray = np.dtype([('origin',    np.float32, (3,)),
                 ('direction', np.float32, (3,))])
 
 # create background structured mesh
-x_min, x_max, y_min, y_max, z_min, z_max = compute_bbox(stl_mesh)
+if BBOX_TYPE == 'prop':
+    x_min, x_max, y_min, y_max, z_min, z_max = compute_bbox(stl_mesh)
 if BBOX_TYPE == 'cube':
+    x_min, x_max, y_min, y_max, z_min, z_max = compute_bbox(stl_mesh)
+    print('cubic box')
     x_min = min(x_min, y_min, z_min)
     y_min = min(x_min, y_min, z_min)
     z_min = min(x_min, y_min, z_min)
     x_max = max(x_max, y_max, z_max)
     y_max = max(x_max, y_max, z_max)
     z_max = max(x_max, y_max, z_max)
+elif BBOX_TYPE == 'manual':
+    print('manual box')
+    #x_min = y_min = z_min = -1.1
+    #x_max = y_max = z_max = 1.1
+    #x_min = -1038  # for drivAer
+    #x_max = 4035  # for drivAer
+    #y_min = -1038
+    #y_max = 4035
+    #z_min = -1038
+    #z_max = 4035
+    x_min = y_min = z_min = -2.02
+    x_max = y_max = z_max = 2.02
+
 print("bounding box with buffer:", x_min, x_max, y_min, y_max, z_min, z_max)
 
 resolution = 256
@@ -202,14 +219,17 @@ def trace_host(axis):
     return intersects
 
 
-def trace(axis):
-    # intersects are cell-based, not node-based
-    if axis==0:
-        intersects = np.zeros((resolution, resolution-1, resolution-1), dtype=np.bool_)
-    elif axis==1:
-        intersects = np.zeros((resolution-1, resolution, resolution-1), dtype=np.bool_)
-    elif axis==2:
-        intersects = np.zeros((resolution-1, resolution-1, resolution), dtype=np.bool_)
+def trace(axis, cell):
+    if cell:
+        intersects = np.zeros((resolution-1, resolution-1, resolution-1), dtype=np.bool_)
+    else:
+        # intersects are cell-based, not node-based
+        if axis==0:
+            intersects = np.zeros((resolution, resolution-1, resolution-1), dtype=np.bool_)
+        elif axis==1:
+            intersects = np.zeros((resolution-1, resolution, resolution-1), dtype=np.bool_)
+        elif axis==2:
+            intersects = np.zeros((resolution-1, resolution-1, resolution), dtype=np.bool_)
     rays = initialize_rays(axis, resolution, x_min, x_max, y_min, y_max, z_min, z_max, sample=ENABLE_RAY_SAMPLING)
     rays_ = cuda.to_device(rays)
     intersects_ = cuda.to_device(intersects)
@@ -233,15 +253,33 @@ def trace(axis):
 # perform ray tracing along each axis
 if ENABLE_CUDA:
     print(f'Ray-tracing on device with {resolution*resolution} rays')
-    x_intersects = trace(0)
-    y_intersects = trace(1)
-    z_intersects = trace(2)
+    x_intersects = trace(0, cell='True')
+    y_intersects = trace(1, cell='True')
+    z_intersects = trace(2, cell='True')
 else:
     print(f'Ray-tracing on host with {resolution*resolution} rays')
     x_intersects = trace_host(0)
     y_intersects = trace_host(1)
     z_intersects = trace_host(2)
 
+
+print(np.sum(x_intersects))
+print(np.sum(y_intersects))
+print(np.sum(z_intersects))
+intersects = x_intersects +y_intersects +z_intersects
+print(np.sum(intersects))
+np.save('1.npy', intersects)
+breakpoint()
+
+np.save('sphere_x.npy', x_intersects)
+np.save('sphere_y.npy', y_intersects)
+np.save('sphere_z.npy', z_intersects)
+
+
+# load interpolated reconstruction
+x_intersects = np.load('C_x.npy')
+y_intersects = np.load('C_y.npy')
+z_intersects = np.load('C_z.npy')
 
 # reconstruct stair-stepped mesh
 all_triangles = []
