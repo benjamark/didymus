@@ -14,6 +14,7 @@ ENABLE_CUDA = config["ENABLE_CUDA"]
 ENABLE_RAY_SAMPLING = config["ENABLE_RAY_SAMPLING"]
 THREADS_PER_BLOCK = config["THREADS_PER_BLOCK"]
 resolution = config["resolution"]
+project_dir = config["project_dir"]
 
 
 if ENABLE_CUDA:
@@ -21,8 +22,7 @@ if ENABLE_CUDA:
 else:
     from kernels_host import ray_intersects_tri, get_cell_ids, trace_rays
 
-path_to_bools = 'npys'
-os.makedirs(path_to_bools, exist_ok=True)
+os.makedirs(project_dir, exist_ok=True)
 
 # define ray data type; use structured numpy array for GPU usage
 Ray = np.dtype([('origin',    np.float32, (3,)), 
@@ -117,8 +117,6 @@ def trace(axis):
 
     return intersects
 
-simplex_dim = len(corner_stls)
-
 # initialize domain boundaries
 x_min, x_max = np.inf, -np.inf
 y_min, y_max = np.inf, -np.inf
@@ -137,6 +135,14 @@ for stl_file in corner_stls:
     y_max = max(y_max, maxy)
     z_min = min(z_min, minz)
     z_max = max(z_max, maxz)
+
+    # make bbox a cube
+    x_min = min(x_min, y_min, z_min)
+    y_min = min(x_min, y_min, z_min)
+    z_min = min(x_min, y_min, z_min)
+    x_max = max(x_max, y_max, z_max)
+    y_max = max(x_max, y_max, z_max)
+    z_max = max(x_max, y_max, z_max)
 
 print("bounding box with buffer:", x_min, x_max, y_min, y_max, z_min, z_max)
 
@@ -170,9 +176,8 @@ for idx, stl_file in enumerate(corner_stls):
         y_intersects = trace_host(1)
         z_intersects = trace_host(2)
 
-    print(np.sum(x_intersects))
-    print(np.sum(y_intersects))
-    print(np.sum(z_intersects))
     intersects = x_intersects +y_intersects +z_intersects
-    print(np.sum(intersects))
-    np.save(f'{path_to_bools}/corner_{idx}.npy', intersects)
+    print(f'Total no. of intersects:{np.sum(intersects)}')
+    print(f'Total no. of grid cells:{resolution**3}')
+    print(f'Fraction of filled volume:{np.sum(intersects)/resolution**3}')
+    np.save(f'{project_dir}/corner_{idx}.npy', intersects)
