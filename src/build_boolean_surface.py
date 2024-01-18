@@ -5,6 +5,7 @@ import trimesh
 import os
 from collections import defaultdict
 from helpers import compute_bbox, center_bbox, dump_rays_to_file, load_config
+import time
 
 # load configuration file
 config = load_config()
@@ -193,18 +194,24 @@ for idx, stl_file in enumerate(corner_stls):
 
     # perform ray tracing along each axis
     if ENABLE_CUDA:
+        t0 = time.time()
         print(f'Ray-tracing on device with {resolution_y*resolution_z} rays')
         x_intersects = trace(0)
         print(f'Ray-tracing on device with {resolution_y*resolution_x} rays')
         y_intersects = trace(1)
         print(f'Ray-tracing on device with {resolution_x*resolution_y} rays')
         z_intersects = trace(2)
+        t1 = time.time()
+        print(f'Timings :: ray-tracing: {t1-t0} (s)')
     else:
+        t0 = time.time()
         print(f'Ray-tracing on host with {resolution_y*resolution_z} rays')
         x_intersects = trace_host(0)
         print(f'Ray-tracing on host with {resolution_y*resolution_x} rays')
         y_intersects = trace_host(1)
         print(f'Ray-tracing on host with {resolution_x*resolution_y} rays')
+        print(f'Timings :: ray-tracing: {t1-t0} (s)')
+        t1 = time.time()
         z_intersects = trace_host(2)
 
     intersects = x_intersects +y_intersects +z_intersects

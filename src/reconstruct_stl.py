@@ -6,22 +6,27 @@ import trimesh
 import os
 from itertools import combinations_with_replacement
 from helpers import load_config
+import time
 
 # load the configuration file
 config = load_config()
 
 corner_stls = config["corner_stls"]
-ENABLE_CUDA = config["ENABLE_CUDA"]
-ENABLE_RAY_SAMPLING = config["ENABLE_RAY_SAMPLING"]
-THREADS_PER_BLOCK = config["THREADS_PER_BLOCK"]
 resolution = config["resolution"]
 project_dir = config["project_dir"]
 samples_per_dim = config["samples_per_dim"]
+epsilon = config["epsilon"]
 
 def generate_barycentric_coordinates(num_dimensions, steps):
     # generate all combinations with replacement to ensure all sums are <= 1
     comb = combinations_with_replacement(range(steps), num_dimensions)
     valid_coords = [np.array(c) / (steps - 1) for c in comb if sum(c) <= (steps - 1)]
+    # write coordinates to file
+    with open('valid_coords.txt', 'w') as file:
+        for coord in valid_coords:
+            coord_str = ' '.join(map(str, coord))  
+            file.write(coord_str + '\n')  
+    
     return valid_coords
 
 def interpolate_sdfs(sdfs, coords):
@@ -32,8 +37,10 @@ def interpolate_sdfs(sdfs, coords):
     return interpolated_sdf
 
 sdfs = [binary_fill_holes(np.load(f"{config['project_dir']}/corner_{i}.npy")) for i in range(len(corner_stls))]
+t0 = time.time()
 sdfs = [distance(~sdf) - distance(sdf) for sdf in sdfs]
-print('computed sdfs')
+t1 = time.time()
+print(f'Timings :: SDF (distance transform): {t1-t0} (s)')
 
 # generate barycentric coordinates
 num_stls = len(config["corner_stls"])
@@ -46,7 +53,6 @@ output_dir = f"{config['project_dir']}/sdfs"
 for coords in barycentric_coords:
     interpolated_sdf = interpolate_sdfs(sdfs, coords)
     
-    epsilon = 1.0
     # TODO: revisit marching cubes
     interface = (interpolated_sdf >= -epsilon) & \
                 (interpolated_sdf <= epsilon)

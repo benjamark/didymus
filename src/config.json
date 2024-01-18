@@ -1,9 +1,10 @@
 {
-    "corner_stls": ["../utils/drivAer/configE_23k.stl", "../utils/drivAer/configF_23k.stl"],
+    "corner_stls": ["../utils/drivAer/configE_23k.stl", "../utils/drivAer/configF_23k.stl", "../utils/drivAer/configN_22k.stl"],
     "ENABLE_CUDA": 1,
     "ENABLE_RAY_SAMPLING": 0,
     "THREADS_PER_BLOCK": 128,
-    "resolution": 256,
-    "project_dir": "npys2",
-    "samples_per_dim": 3
+    "resolution": 512,
+    "project_dir": "npys/drivAer3",
+    "samples_per_dim": 10,
+    "epsilon": 1.3
 }
