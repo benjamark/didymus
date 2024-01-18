@@ -29,8 +29,7 @@ Ray = np.dtype([('origin',    np.float32, (3,)),
                 ('direction', np.float32, (3,))])
 
 
-def initialize_rays(axis, resolution, x_min, x_max, y_min, y_max, z_min, \
-                    z_max, sample=False):
+def initialize_rays(axis, sample=False):
     """Generate a regular grid of rays along the specified axis, originating
        at the minimum value of the axis. The rays are centered in the face
        normal to the axis. If sample is True, generate staggered rays.
@@ -39,8 +38,18 @@ def initialize_rays(axis, resolution, x_min, x_max, y_min, y_max, z_min, \
     ray_data = []
     offset_factor = 0.01*(x[1]-x[0])  # offset from central ray
 
-    for i in range(resolution-1):
-        for j in range(resolution-1):
+    if axis==0:
+        res_i = resolution_y
+        res_j = resolution_z
+    elif axis==1:
+        res_i = resolution_x
+        res_j = resolution_z
+    elif axis==2:
+        res_i = resolution_x
+        res_j = resolution_y
+
+    for i in range(res_i-1):
+        for j in range(res_j-1):
             # base ray origin calculation
             if axis==0:
                 base_origin = [x_min, 0.5*(y[i+1]+y[i]), 0.5*(z[j+1]+z[j])]
@@ -79,25 +88,23 @@ def initialize_rays(axis, resolution, x_min, x_max, y_min, y_max, z_min, \
 
 def trace_host(axis):
     # TODO: make cell mandatory
-    intersects = np.zeros((resolution-1, resolution-1, resolution-1), \
+    intersects = np.zeros((resolution_x-1, resolution_y-1, resolution_z-1), \
                           dtype=np.bool_)
 
-    rays = initialize_rays(axis, resolution, x_min, x_max, y_min, y_max, \
-                           z_min, z_max, sample=ENABLE_RAY_SAMPLING)
+    rays = initialize_rays(axis, sample=ENABLE_RAY_SAMPLING)
 
     trace_rays(rays, tris, intersects, x_min, x_max, y_min, y_max, z_min, \
-               z_max, resolution, axis)
+               z_max, resolution_x, resolution_y, resolution_z, axis)
     
     print(f"Total intersections along {axis}-axis:", np.sum(intersects))
     return intersects
 
 
 def trace(axis):
-    intersects = np.zeros((resolution-1, resolution-1, resolution-1), \
+    intersects = np.zeros((resolution_x-1, resolution_y-1, resolution_z-1), \
                           dtype=np.bool_)
 
-    rays = initialize_rays(axis, resolution, x_min, x_max, y_min, y_max, \
-                           z_min, z_max, sample=ENABLE_RAY_SAMPLING)
+    rays = initialize_rays(axis, sample=ENABLE_RAY_SAMPLING)
 
     rays_ = cuda.to_device(rays)
     intersects_ = cuda.to_device(intersects)
@@ -107,7 +114,7 @@ def trace(axis):
 
     trace_rays[blocks_per_grid, THREADS_PER_BLOCK] \
         (rays_, tris_, intersects_, x_min, x_max, y_min, y_max, z_min, \
-        z_max, resolution, axis)
+        z_max, resolution_x, resolution_y, resolution_z, axis)
 
     cuda.synchronize()
     
@@ -136,22 +143,42 @@ for stl_file in corner_stls:
     z_min = min(z_min, minz)
     z_max = max(z_max, maxz)
 
-    # make bbox a cube
-    x_min = min(x_min, y_min, z_min)
-    y_min = min(x_min, y_min, z_min)
-    z_min = min(x_min, y_min, z_min)
-    x_max = max(x_max, y_max, z_max)
-    y_max = max(x_max, y_max, z_max)
-    z_max = max(x_max, y_max, z_max)
-
 print("bounding box with buffer:", x_min, x_max, y_min, y_max, z_min, z_max)
 
+x_range = x_max - x_min
+y_range = y_max - y_min
+z_range = z_max - z_min
 
-# coordinates of nodes
-x = np.linspace(x_min, x_max, resolution)
-y = np.linspace(y_min, y_max, resolution)
-z = np.linspace(z_min, z_max, resolution)
-# grid of nodes
+# identify the largest dimension range and calculate dx
+largest_range = max(x_range, y_range, z_range)
+dx = largest_range / resolution
+
+# adjust dimensions to nearest integral multiple of dx
+if largest_range == x_range:
+    y_max = y_min + round(y_range / dx) * dx
+    z_max = z_min + round(z_range / dx) * dx
+    resolution_x = resolution
+    resolution_y = round((y_max - y_min) / dx)
+    resolution_z = round((z_max - z_min) / dx)
+elif largest_range == y_range:
+    x_max = x_min + round(x_range / dx) * dx
+    z_max = z_min + round(z_range / dx) * dx
+    resolution_x = round((x_max - x_min) / dx)
+    resolution_y = resolution
+    resolution_z = round((z_max - z_min) / dx)
+else:  # z_range is the largest
+    x_max = x_min + round(x_range / dx) * dx
+    y_max = y_min + round(y_range / dx) * dx
+    resolution_x = round((x_max - x_min) / dx)
+    resolution_y = round((y_max - y_min) / dx)
+    resolution_z = resolution
+
+print("adjusted bounding box:", x_min, x_max, y_min, y_max, z_min, z_max)
+
+# generate grid 
+x = np.linspace(x_min, x_max, resolution_x)
+y = np.linspace(y_min, y_max, resolution_y)
+z = np.linspace(z_min, z_max, resolution_z)
 X, Y, Z = np.meshgrid(x, y, z, indexing='ij')
 
 
@@ -166,18 +193,22 @@ for idx, stl_file in enumerate(corner_stls):
 
     # perform ray tracing along each axis
     if ENABLE_CUDA:
-        print(f'Ray-tracing on device with {resolution*resolution} rays')
+        print(f'Ray-tracing on device with {resolution_y*resolution_z} rays')
         x_intersects = trace(0)
+        print(f'Ray-tracing on device with {resolution_y*resolution_x} rays')
         y_intersects = trace(1)
+        print(f'Ray-tracing on device with {resolution_x*resolution_y} rays')
         z_intersects = trace(2)
     else:
-        print(f'Ray-tracing on host with {resolution*resolution} rays')
+        print(f'Ray-tracing on host with {resolution_y*resolution_z} rays')
         x_intersects = trace_host(0)
+        print(f'Ray-tracing on host with {resolution_y*resolution_x} rays')
         y_intersects = trace_host(1)
+        print(f'Ray-tracing on host with {resolution_x*resolution_y} rays')
         z_intersects = trace_host(2)
 
     intersects = x_intersects +y_intersects +z_intersects
     print(f'Total no. of intersects:{np.sum(intersects)}')
-    print(f'Total no. of grid cells:{resolution**3}')
+    print(f'Total no. of grid cells:{resolution_x*resolution_y*resolution_z}')
     print(f'Fraction of filled volume:{np.sum(intersects)/resolution**3}')
     np.save(f'{project_dir}/corner_{idx}.npy', intersects)

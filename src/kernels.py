@@ -63,45 +63,45 @@ def ray_intersects_tri(ray, triangle):
 
 
 @cuda.jit(device=True)
-def get_cell_ids(point_x, point_y, point_z, x_min, x_max, y_min, y_max, z_min, z_max, resolution, axis):
+def get_cell_ids(point_x, point_y, point_z, x_min, x_max, y_min, y_max, z_min, z_max, resolution_x, resolution_y, resolution_z, axis):
     # Normalize the point coordinates within the grid range
     x_normalized = (point_x - x_min) / (x_max - x_min)
     y_normalized = (point_y - y_min) / (y_max - y_min)
     z_normalized = (point_z - z_min) / (z_max - z_min)
 
-    xf_id = round(x_normalized * (resolution - 2))
-    yf_id = round(y_normalized * (resolution - 2))
-    zf_id = round(z_normalized * (resolution - 2))
+    xf_id = round(x_normalized * (resolution_x - 2))
+    yf_id = round(y_normalized * (resolution_y - 2))
+    zf_id = round(z_normalized * (resolution_z - 2))
 
     return xf_id, yf_id, zf_id
 
 
 @cuda.jit(device=True)
-def get_face_ids(point_x, point_y, point_z, x_min, x_max, y_min, y_max, z_min, z_max, resolution, axis):
+def get_face_ids(point_x, point_y, point_z, x_min, x_max, y_min, y_max, z_min, z_max, resolution_x, resolution_y, resolution_z, axis):
     # Normalize the point coordinates within the grid range
     x_normalized = (point_x - x_min) / (x_max - x_min)
     y_normalized = (point_y - y_min) / (y_max - y_min)
     z_normalized = (point_z - z_min) / (z_max - z_min)
 
     if axis == 0:
-        xf_id = round(x_normalized * (resolution - 1))
-        yf_id = round(y_normalized * (resolution - 2))
-        zf_id = round(z_normalized * (resolution - 2))
+        xf_id = round(x_normalized * (resolution_x - 1))
+        yf_id = round(y_normalized * (resolution_y - 2))
+        zf_id = round(z_normalized * (resolution_z - 2))
     elif axis == 1:
-        xf_id = round(x_normalized * (resolution - 2))
-        yf_id = round(y_normalized * (resolution - 1))
-        zf_id = round(z_normalized * (resolution - 2))
+        xf_id = round(x_normalized * (resolution_x - 2))
+        yf_id = round(y_normalized * (resolution_y - 1))
+        zf_id = round(z_normalized * (resolution_z - 2))
     elif axis == 2:
-        xf_id = round(x_normalized * (resolution - 2))
-        yf_id = round(y_normalized * (resolution - 2))
-        zf_id = round(z_normalized * (resolution - 1))
+        xf_id = round(x_normalized * (resolution_x - 2))
+        yf_id = round(y_normalized * (resolution_y - 2))
+        zf_id = round(z_normalized * (resolution_z - 1))
 
     return xf_id, yf_id, zf_id
 
 
 @cuda.jit
 def trace_rays(rays, triangles, intersection_grid, x_min, x_max, y_min, \
-               y_max, z_min, z_max, resolution, axis):
+               y_max, z_min, z_max, resolution_x, resolution_y, resolution_z, axis):
     ray_idx = cuda.grid(1)
     if ray_idx < rays.shape[0]:
         ray = rays[ray_idx]
@@ -109,5 +109,5 @@ def trace_rays(rays, triangles, intersection_grid, x_min, x_max, y_min, \
             intersects, point_x, point_y, point_z = ray_intersects_tri(ray, triangles[j])
             if intersects:
                 x_idx, y_idx, z_idx = get_cell_ids( \
-                point_x, point_y, point_z, x_min, x_max, y_min, y_max, z_min, z_max, resolution, axis)
+                point_x, point_y, point_z, x_min, x_max, y_min, y_max, z_min, z_max, resolution_x, resolution_y, resolution_z, axis)
                 intersection_grid[x_idx, y_idx, z_idx] = True

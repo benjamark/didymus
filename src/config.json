@@ -3,7 +3,7 @@
     "ENABLE_CUDA": 1,
     "ENABLE_RAY_SAMPLING": 0,
     "THREADS_PER_BLOCK": 128,
-    "resolution": 64,
-    "project_dir": "npys",
-    "samples_per_dim": 5
+    "resolution": 256,
+    "project_dir": "npys2",
+    "samples_per_dim": 3
 }

@@ -33,6 +33,7 @@ def interpolate_sdfs(sdfs, coords):
 
 sdfs = [binary_fill_holes(np.load(f"{config['project_dir']}/corner_{i}.npy")) for i in range(len(corner_stls))]
 sdfs = [distance(~sdf) - distance(sdf) for sdf in sdfs]
+print('computed sdfs')
 
 # generate barycentric coordinates
 num_stls = len(config["corner_stls"])
