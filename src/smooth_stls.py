@@ -1,7 +1,12 @@
 import pymeshlab
 import os
 import trimesh
+from helpers import load_config
 
+config = load_config()
+smooth_iter = config["smooth_iter"]
+
+# TODO: make relative to project_dir
 input_directory = './sdfs/'
 output_directory = './ssdfs/'
 
@@ -11,7 +16,7 @@ for stl_file in stl_files:
     ms = pymeshlab.MeshSet()
     ms.load_new_mesh(os.path.join(input_directory, stl_file))
 
-    ms.apply_filter('apply_coord_laplacian_smoothing', stepsmoothnum=5)
+    ms.apply_filter('apply_coord_laplacian_smoothing', stepsmoothnum=smooth_iter)
 
     temp_file = 'temp.stl'
     ms.save_current_mesh(temp_file)

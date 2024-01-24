@@ -6,5 +6,6 @@
     "resolution": 257,
     "project_dir": "npys/sizer",
     "samples_per_dim": 20,
-    "epsilon": 1.2
+    "epsilon": 1.2,
+    "smooth_iter": 10
 }
