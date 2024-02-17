@@ -1,5 +1,12 @@
 # didymus
 
+## installation with Conda
+
+From the root of the cloned directory, run
+
+`conda env create -f environment.yml`
+
+to create a Conda environment with all the dependencies.
 
 ## configuration options 
 
