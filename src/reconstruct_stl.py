@@ -16,7 +16,7 @@ resolution = config["resolution"]
 project_dir = config["project_dir"]
 samples_per_dim = config["samples_per_dim"]
 epsilon = config["epsilon"]
-project_dir = f'{project_dir}_r{resolution}'
+project_dir = f'{project_dir}_r{resolution}_n{samples_per_dim}'
 print(project_dir)
 
 def generate_barycentric_coordinates(num_dimensions, steps):
@@ -74,9 +74,10 @@ for coords in barycentric_coords:
     mesh = trimesh.Trimesh(vertices=vertices, faces=faces)
 
     # export mesh
-    coords_str = '_'.join(f"{int(coord * 100)}" for coord in coords)
-    filename = f"{sdfs_dir}/sdf_{coords_str}.stl"
+    if mesh.is_watertight:
+        coords_str = '_'.join(f"{int(coord * 100)}" for coord in coords)
+        filename = f"{sdfs_dir}/sdf_{coords_str}.stl"
     
-    print(f'Watertightness check: {mesh.is_watertight}')
-    mesh.export(filename)
+        mesh.export(filename)
 
+    print(f'Watertightness check: {mesh.is_watertight}')

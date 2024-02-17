@@ -1,0 +1,8 @@
+job.script
+output.txt
+*.npy
+*.png
+*.stl
+*.obj
+npys/
+projects/

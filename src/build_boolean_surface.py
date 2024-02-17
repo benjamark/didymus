@@ -15,8 +15,9 @@ ENABLE_CUDA = config["ENABLE_CUDA"]
 ENABLE_RAY_SAMPLING = config["ENABLE_RAY_SAMPLING"]
 THREADS_PER_BLOCK = config["THREADS_PER_BLOCK"]
 resolution = config["resolution"]
+samples_per_dim = config["samples_per_dim"]
 project_dir = config["project_dir"]
-project_dir = f'{project_dir}_r{resolution}'
+project_dir = f'{project_dir}_r{resolution}_n{samples_per_dim}'
 print(project_dir)
 
 

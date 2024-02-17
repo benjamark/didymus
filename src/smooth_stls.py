@@ -7,8 +7,8 @@ config = load_config()
 smooth_iter = config["smooth_iter"]
 
 # TODO: make relative to project_dir
-input_directory = './sdfs/'
-output_directory = './ssdfs/'
+input_directory = 'npys/images_r257/sdfs/'
+output_directory = 'npys/images_r257/ssdfs/'
 
 stl_files = [f for f in os.listdir(input_directory) if f.endswith('.stl')]
 
