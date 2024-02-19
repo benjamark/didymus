@@ -54,19 +54,13 @@ os.makedirs(f"{npys_dir}", exist_ok=True)
 os.makedirs(f"{sdfs_dir}", exist_ok=True) 
 
 # process each combination of barycentric coordinates
-# STAGMOD
 count = 0
 for coords in barycentric_coords:
     print(count)
     interpolated_sdf = interpolate_sdfs(sdfs, coords)
     
-    # TODO: revisit marching cubes
     interface = (interpolated_sdf >= -epsilon) & \
                 (interpolated_sdf <= epsilon)
-
-    # STAGMOD
-    np.save(f'{npys_dir}/{count}.npy', interface)
-    count += 1
 
     scalar_field = interface.astype(np.float32)
     # extract interface using marching cubes
@@ -77,7 +71,14 @@ for coords in barycentric_coords:
     if mesh.is_watertight:
         coords_str = '_'.join(f"{int(coord * 100)}" for coord in coords)
         filename = f"{sdfs_dir}/sdf_{coords_str}.stl"
-    
+        # only write watertight stls
         mesh.export(filename)
+        # only write corresponding numpy arrs
+        np.save(f'{npys_dir}/{count}.npy', interface)
+    else:
+        with open(f'{project_dir}/leaky_coords.txt', 'a') as file:
+            coord_str = ' '.join(map(str, coords))  
+            file.write(coord_str + '\n')  
 
     print(f'Watertightness check: {mesh.is_watertight}')
+    count += 1

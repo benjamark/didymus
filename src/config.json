@@ -5,7 +5,7 @@
     "THREADS_PER_BLOCK": 128,
     "resolution": 769,
     "project_dir": "projects/drivAer",
-    "samples_per_dim": 40,
+    "samples_per_dim": 63,
     "epsilon": 1.2,
     "smooth_iter": 10
 }
