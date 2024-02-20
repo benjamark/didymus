@@ -26,18 +26,11 @@ if ENABLE_CUDA:
 else:
     from kernels_host import ray_intersects_tri, get_cell_ids, trace_rays
 
-os.makedirs(project_dir, exist_ok=True)
-
-# define ray data type; use structured numpy array for GPU usage
-Ray = np.dtype([('origin',    np.float32, (3,)), 
-                ('direction', np.float32, (3,))])
-
 
 def initialize_rays(axis, sample=False):
     """Generate a regular grid of rays along the specified axis, originating
        at the minimum value of the axis. The rays are centered in the face
        normal to the axis. If sample is True, generate staggered rays.
-       NOTE: Looping only works for a cubic grid.
     """
     ray_data = []
     offset_factor = 0.01*(x[1]-x[0])  # offset from central ray
@@ -91,7 +84,6 @@ def initialize_rays(axis, sample=False):
 
 
 def trace_host(axis):
-    # TODO: make cell mandatory
     intersects = np.zeros((resolution_x-1, resolution_y-1, resolution_z-1), \
                           dtype=np.bool_)
 
@@ -127,6 +119,13 @@ def trace(axis):
     print(f"Total intersections along {axis}-axis:", np.sum(intersects))
 
     return intersects
+
+
+os.makedirs(project_dir, exist_ok=True)
+
+# define ray data type; use structured numpy array for GPU usage
+Ray = np.dtype([('origin',    np.float32, (3,)), 
+                ('direction', np.float32, (3,))])
 
 # initialize domain boundaries
 x_min, x_max = np.inf, -np.inf

@@ -10,3 +10,4 @@ dependencies:
   - trimesh
   - scipy
   - scikit-image 
+  - pytest
