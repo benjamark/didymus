@@ -19,6 +19,45 @@ epsilon = config["epsilon"]
 project_dir = f'{project_dir}_r{resolution}_n{samples_per_dim}'
 print(project_dir)
 
+
+def gen_nd_bary_weights(resolution, n):
+    """
+    Generate barycentric weights for an n-dimensional simplex using a nifty
+    recursive implementation.
+
+    Computes all possible combinations of barycentric weights
+    for an n-dimensional simplex, given a specified resolution.
+
+    Parameters
+    ----------
+    resolution : int
+        No. of divisions along each axis of the simplex.
+
+    n : int
+        The dimension of the simplex. e.g., `n=2` for a triangle (2-simplex),
+        `n=3` for a tetrahedron (3-simplex), etc.
+
+    Returns
+    -------
+    numpy.ndarray
+        2D numpy array. Each row represents a set of barycentric weights for a
+        point within the n-dimensional simplex.
+
+    """
+    def generate_weights(current, level):
+        if level == n:  # base case: last weight
+            return [current + [resolution - sum(current)]]
+        else:
+            combinations = []
+            for i in range(resolution - sum(current) + 1):
+                combinations += generate_weights(current + [i], level + 1)
+            return combinations
+
+    raw_combinations = generate_weights([], 0)
+    scaled_combinations = np.array(raw_combinations) / resolution
+    return scaled_combinations
+
+
 def gen_2d_bary_weights(resolution):
     """
     Generate all possible combinations of 2D barycentric weights (w1, w2, w3)
