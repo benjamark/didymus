@@ -6,9 +6,10 @@ from helpers import load_config
 config = load_config()
 smooth_iter = config["smooth_iter"]
 
+project_dir = f'{project_dir}_r{resolution}_n{samples_per_dim}'
 # TODO: make relative to project_dir
-input_directory = 'npys/images_r257/sdfs/'
-output_directory = 'npys/images_r257/ssdfs/'
+input_directory = f'{project_dir}/sdfs/'
+output_directory = f'{project_dir}/ssdfs/'
 
 stl_files = [f for f in os.listdir(input_directory) if f.endswith('.stl')]
 

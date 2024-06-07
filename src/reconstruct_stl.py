@@ -123,6 +123,7 @@ os.makedirs(f"{sdfs_dir}", exist_ok=True)
 
 # process each combination of barycentric coordinates
 count = 0
+print(f'Total samples: {w1.shape}')
 for i in range(w1.shape[0]):
     print(count)
     interpolated_sdf = interpolate_sdfs_2d(sdfs, w1[i], w2[i], w3[i])
@@ -136,14 +137,17 @@ for i in range(w1.shape[0]):
     mesh = trimesh.Trimesh(vertices=vertices, faces=faces)
 
     # export mesh
-    if mesh.is_watertight:
-        filename = f"{sdfs_dir}/sdf_{i}.stl"
-        # only write watertight stls
-        mesh.export(filename)
-        # only write corresponding numpy arrs
-        np.save(f'{npys_dir}/{i}.npy', interface)
+    # NOTE: WE WRITE ALL STLS REGARDLESS OF WATERTIGHTNESS BECAUSE OF 
+    #if mesh.is_watertight:
+    filename = f"{sdfs_dir}/sdf_{i}.stl"
+    # only write watertight stls
+    #mesh.export(filename)
+    # write sdfs instead
+    np.save(f'{sdfs_dir}/{i}.npy', interpolated_sdf)
+    # only write corresponding numpy arrs
+    np.save(f'{npys_dir}/{i}.npy', interface)
 
+    print(i)
     print(f'Watertightness check: {mesh.is_watertight}')
     count += 1
-
 
