@@ -1,0 +1,17 @@
+
+Due to MODULEPATH changes, the following have been reloaded:
+  1) anaconda3/2022.05
+
+projects/sphere_r257_n23
+bounding box with buffer: -1.1 1.1 -1.1 1.1 -1.1 1.1
+adjusted bounding box: -1.1 1.1 -1.1 1.100000023841858 -1.1 1.100000023841858
+Ray-tracing on device with 66049 rays
+Total intersections along 0-axis: 85032
+Ray-tracing on device with 66049 rays
+Total intersections along 1-axis: 85032
+Ray-tracing on device with 66049 rays
+Total intersections along 2-axis: 85032
+Timings :: ray-tracing: 1.228409767150879 (s)
+Total no. of intersects:144931
+Total no. of grid cells:16974593
+Fraction of filled volume:0.008538113402777905

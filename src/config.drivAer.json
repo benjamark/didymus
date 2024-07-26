@@ -1,0 +1,11 @@
+{
+    "corner_stls": ["../utils/drivAer/configE_23k.stl", "../utils/drivAer/configF_23k.stl", "../utils/drivAer/configN_22k.stl"],
+    "ENABLE_CUDA": 1,
+    "ENABLE_RAY_SAMPLING": 0,
+    "THREADS_PER_BLOCK": 128,
+    "resolution": 1025,
+    "project_dir": "projects/drivAer",
+    "samples_per_dim": 23,
+    "epsilon": 1.2,
+    "smooth_iter": 25
+}

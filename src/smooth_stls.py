@@ -13,7 +13,8 @@ output_directory = f'{project_dir}/ssdfs/'
 
 stl_files = [f for f in os.listdir(input_directory) if f.endswith('.stl')]
 
-for stl_file in stl_files:
+for i, stl_file in enumerate(stl_files):
+    print(i)
     ms = pymeshlab.MeshSet()
     ms.load_new_mesh(os.path.join(input_directory, stl_file))
 

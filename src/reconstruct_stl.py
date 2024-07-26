@@ -19,45 +19,6 @@ epsilon = config["epsilon"]
 project_dir = f'{project_dir}_r{resolution}_n{samples_per_dim}'
 print(project_dir)
 
-
-def gen_nd_bary_weights(resolution, n):
-    """
-    Generate barycentric weights for an n-dimensional simplex using a nifty
-    recursive implementation.
-
-    Computes all possible combinations of barycentric weights
-    for an n-dimensional simplex, given a specified resolution.
-
-    Parameters
-    ----------
-    resolution : int
-        No. of divisions along each axis of the simplex.
-
-    n : int
-        The dimension of the simplex. e.g., `n=2` for a triangle (2-simplex),
-        `n=3` for a tetrahedron (3-simplex), etc.
-
-    Returns
-    -------
-    numpy.ndarray
-        2D numpy array. Each row represents a set of barycentric weights for a
-        point within the n-dimensional simplex.
-
-    """
-    def generate_weights(current, level):
-        if level == n:  # base case: last weight
-            return [current + [resolution - sum(current)]]
-        else:
-            combinations = []
-            for i in range(resolution - sum(current) + 1):
-                combinations += generate_weights(current + [i], level + 1)
-            return combinations
-
-    raw_combinations = generate_weights([], 0)
-    scaled_combinations = np.array(raw_combinations) / resolution
-    return scaled_combinations
-
-
 def gen_2d_bary_weights(resolution):
     """
     Generate all possible combinations of 2D barycentric weights (w1, w2, w3)
@@ -79,37 +40,24 @@ def gen_2d_bary_weights(resolution):
 
     return w1_array, w2_array, w3_array
 
+
 def interpolate_sdfs_2d(sdfs, w1, w2, w3):
     return w1*sdfs[0] +w2*sdfs[1] +w3*sdfs[2]
 
-def generate_barycentric_coordinates(num_dimensions, steps):
-    # generate all combinations with replacement to ensure all sums are <= 1
-    comb = combinations_with_replacement(range(steps), num_dimensions)
-    valid_coords = [np.array(c) / (steps - 1) for c in comb if sum(c) <= (steps - 1)]
-    # write coordinates to file
-    with open(f'{project_dir}/valid_coords.txt', 'w') as file:
-        for coord in valid_coords:
-            coord_str = ' '.join(map(str, coord))  
-            file.write(coord_str + '\n')  
-    
-    return valid_coords
-
-def interpolate_sdfs(sdfs, coords):
-    interpolated_sdf = np.zeros_like(sdfs[0])
-    for i, coord in enumerate(coords):
-        interpolated_sdf += coord * sdfs[i]
-    interpolated_sdf += (1 - sum(coords)) * sdfs[-1]
-    return interpolated_sdf
 
 sdfs = [binary_fill_holes(np.load(f"{project_dir}/corner_{i}.npy")) for i in range(len(corner_stls))]
 t0 = time.time()
 sdfs = [distance(~sdf) - distance(sdf) for sdf in sdfs]
+
+np.save('sdfs.npy', sdfs)
+print(sdfs.shape)
+breakpoint()
+
 t1 = time.time()
 print(f'Timings :: SDF (distance transform): {t1-t0} (s)')
 
 # generate barycentric coordinates
 num_stls = len(config["corner_stls"])
-#barycentric_coords = generate_barycentric_coordinates(num_stls - 1, samples_per_dim)
 
 w1, w2, w3 = gen_2d_bary_weights(samples_per_dim)
 np.save(f'{project_dir}/w1.npy', w1)
@@ -138,16 +86,7 @@ for i in range(w1.shape[0]):
 
     # export mesh
     # NOTE: WE WRITE ALL STLS REGARDLESS OF WATERTIGHTNESS BECAUSE OF 
-    #if mesh.is_watertight:
-    filename = f"{sdfs_dir}/sdf_{i}.stl"
-    # only write watertight stls
-    #mesh.export(filename)
-    # write sdfs instead
-    np.save(f'{sdfs_dir}/{i}.npy', interpolated_sdf)
     # only write corresponding numpy arrs
     np.save(f'{npys_dir}/{i}.npy', interface)
-
     print(i)
-    print(f'Watertightness check: {mesh.is_watertight}')
     count += 1
-
