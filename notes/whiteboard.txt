@@ -1,7 +1,0 @@
-STL 2 STL
-=========
-Step 1 ray--trace to get xcross[3]
-Step 2 modify xcross[3] [] (barycentric interpolation)
-Step 3 build stair--stepped volume from modified xcross[3]
-Step 4 project stair--stepped volume to get surface
-Step 5 split quads to get STL tris
